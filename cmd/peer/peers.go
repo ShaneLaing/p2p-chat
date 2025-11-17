@@ -1,8 +1,10 @@
 package main
 
 import (
+	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 type blockList struct {
@@ -51,16 +53,23 @@ func (b *blockList) List() []string {
 	return out
 }
 
+type peerEntry struct {
+	Name     string
+	Addr     string
+	Online   bool
+	LastSeen time.Time
+}
+
 type peerDirectory struct {
 	mu     sync.RWMutex
-	byName map[string]string
-	byAddr map[string]string
+	byName map[string]*peerEntry
+	byAddr map[string]*peerEntry
 }
 
 func newPeerDirectory() *peerDirectory {
 	return &peerDirectory{
-		byName: make(map[string]string),
-		byAddr: make(map[string]string),
+		byName: make(map[string]*peerEntry),
+		byAddr: make(map[string]*peerEntry),
 	}
 }
 
@@ -71,18 +80,65 @@ func (p *peerDirectory) Record(name, addr string) {
 	if name == "" {
 		name = addr
 	}
+	key := strings.ToLower(name)
+	now := time.Now()
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.byName[strings.ToLower(name)] = addr
-	p.byAddr[addr] = name
+	entry, ok := p.byAddr[addr]
+	if !ok {
+		entry = &peerEntry{Addr: addr}
+		p.byAddr[addr] = entry
+	}
+	entry.Name = name
+	entry.Addr = addr
+	entry.Online = true
+	entry.LastSeen = now
+	p.byName[key] = entry
 }
 
-func (p *peerDirectory) Resolve(token string) (string, bool) {
+func (p *peerDirectory) MarkActive(addrs []string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	active := make(map[string]struct{}, len(addrs))
+	for _, addr := range addrs {
+		active[addr] = struct{}{}
+		if entry, ok := p.byAddr[addr]; ok {
+			entry.Online = true
+			entry.LastSeen = time.Now()
+		}
+	}
+	for addr, entry := range p.byAddr {
+		if _, ok := active[addr]; !ok {
+			entry.Online = false
+		}
+	}
+}
+
+func (p *peerDirectory) Resolve(token string) (addr string, name string, ok bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	if _, ok := p.byAddr[token]; ok {
-		return token, true
+	if entry, ok := p.byAddr[token]; ok {
+		return entry.Addr, entry.Name, true
 	}
-	addr, ok := p.byName[strings.ToLower(token)]
-	return addr, ok
+	if entry, ok := p.byName[strings.ToLower(token)]; ok {
+		return entry.Addr, entry.Name, true
+	}
+	return "", "", false
+}
+
+func (p *peerDirectory) Snapshot() []peerPresence {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	list := make([]peerPresence, 0, len(p.byAddr))
+	for _, entry := range p.byAddr {
+		list = append(list, peerPresence{
+			Name:   entry.Name,
+			Addr:   entry.Addr,
+			Online: entry.Online,
+		})
+	}
+	sort.Slice(list, func(i, j int) bool {
+		return strings.ToLower(list[i].Name) < strings.ToLower(list[j].Name)
+	})
+	return list
 }

@@ -8,6 +8,7 @@ type Message struct {
 	Type      string    `json:"type"`
 	From      string    `json:"from"`
 	Origin    string    `json:"origin"`
+	AuthToken string    `json:"auth_token,omitempty"`
 	To        string    `json:"to,omitempty"`
 	ToAddr    string    `json:"to_addr,omitempty"`
 	Content   string    `json:"content"`

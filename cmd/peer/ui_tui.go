@@ -96,11 +96,19 @@ func (t *tuiDisplay) ShowSystem(text string) {
 	})
 }
 
-func (t *tuiDisplay) UpdatePeers(peers []string) {
+func (t *tuiDisplay) UpdatePeers(peers []peerPresence) {
 	t.app.QueueUpdateDraw(func() {
 		t.peers.Clear()
 		for _, p := range peers {
-			t.peers.AddItem(p, "", 0, nil)
+			label := p.Name
+			if label == "" {
+				label = p.Addr
+			}
+			status := "offline"
+			if p.Online {
+				status = "online"
+			}
+			t.peers.AddItem(fmt.Sprintf("%s (%s)", label, status), "", 0, nil)
 		}
 	})
 }

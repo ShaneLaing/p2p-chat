@@ -19,16 +19,18 @@ import (
 	"syscall"
 	"time"
 
+	"p2p-chat/internal/authutil"
 	"p2p-chat/internal/crypto"
 	"p2p-chat/internal/message"
 	"p2p-chat/internal/network"
 )
 
 const (
-	msgTypeChat     = "chat"
-	msgTypeDM       = "dm"
-	msgTypeAck      = "ack"
-	msgTypePeerSync = "peer_sync"
+	msgTypeChat      = "chat"
+	msgTypeDM        = "dm"
+	msgTypeAck       = "ack"
+	msgTypePeerSync  = "peer_sync"
+	msgTypeHandshake = "handshake"
 )
 
 var (
@@ -36,6 +38,8 @@ var (
 	listenAddr   = flag.String("listen", "", "address to listen on (host:port)")
 	port         = flag.Int("port", 9001, "port to listen on when --listen empty")
 	nick         = flag.String("nick", "", "nickname displayed in chat")
+	usernameFlag = flag.String("username", "", "authenticated username (overrides --nick)")
+	tokenFlag    = flag.String("token", "", "JWT token for authenticated username")
 	secret       = flag.String("secret", "", "shared secret for AES-256 encryption")
 	pollEvery    = flag.Duration("poll", 5*time.Second, "interval to refresh peers list")
 	historySize  = flag.Int("history", 200, "amount of messages kept locally")
@@ -44,6 +48,7 @@ var (
 	enableWeb    = flag.Bool("web", false, "serve local web UI")
 	webAddr      = flag.String("web-addr", "127.0.0.1:8081", "address for embedded web UI server")
 	historyDB    = flag.String("history-db", "p2p-chat-history.db", "path to persisted chat history db")
+	authAPI      = flag.String("auth-api", "http://127.0.0.1:8089", "authentication server base url")
 )
 
 func main() {
@@ -79,6 +84,9 @@ func main() {
 	}
 
 	identity := newIdentity(*nick, addr)
+	if *usernameFlag != "" && *tokenFlag != "" {
+		identity.SetAuth(*usernameFlag, *tokenFlag)
+	}
 	blocklist := newBlockList()
 	directory := newPeerDirectory()
 	metrics := newMetrics()
@@ -101,6 +109,10 @@ func main() {
 		selfAddr:  addr,
 	}
 
+	if name := identity.Get(); name != "" {
+		directory.Record(name, addr)
+	}
+
 	sinks := []displaySink{}
 	cliSink := newCLIDisplay(shouldUseColor(*noColor))
 	if !*enableTUI {
@@ -120,7 +132,14 @@ func main() {
 
 	var webSink *webBridge
 	if *enableWeb {
-		wb, err := newWebBridge(*webAddr, history, func(line string) { processLine(app, line) })
+		setter := func(user, token string) error {
+			if app.identity.SetAuth(user, token) {
+				app.sink.ShowSystem(fmt.Sprintf("logged in as %s", user))
+				broadcastHandshake(app)
+			}
+			return nil
+		}
+		wb, err := newWebBridge(*webAddr, history, func(line string) { processLine(app, line) }, setter)
 		if err != nil {
 			log.Fatalf("web ui: %v", err)
 		}
@@ -136,6 +155,7 @@ func main() {
 		log.Printf("register failed: %v", err)
 	}
 	connectToBootstrapPeers(app)
+	broadcastHandshake(app)
 
 	go dialer.Run(ctx)
 	go handleIncoming(app)
@@ -213,7 +233,6 @@ func (app *appContext) processIncoming(msg message.Message) {
 	if msg.Type == "" {
 		msg.Type = msgTypeChat
 	}
-	app.directory.Record(msg.From, msg.Origin)
 
 	switch msg.Type {
 	case msgTypeAck:
@@ -227,7 +246,20 @@ func (app *appContext) processIncoming(msg message.Message) {
 			app.dialer.Add(peer)
 		}
 		return
+	case msgTypeHandshake:
+		if msg.AuthToken != "" {
+			username, err := authutil.ValidateToken(msg.AuthToken)
+			if err != nil || !strings.EqualFold(username, msg.From) {
+				log.Printf("handshake rejected from %s: %v", msg.Origin, err)
+				return
+			}
+		}
+		app.directory.Record(msg.From, msg.Origin)
+		app.sink.UpdatePeers(app.directory.Snapshot())
+		return
 	}
+
+	app.directory.Record(msg.From, msg.Origin)
 
 	if app.blocklist.Blocks(msg.From, msg.Origin) {
 		return
@@ -270,17 +302,19 @@ func sendChatMessage(app *appContext, content string) {
 	app.sink.ShowMessage(msg)
 	app.cm.Broadcast(msg, "")
 	app.ack.Track(msg)
+	app.persistExternal(msg, "")
 }
 
 func sendDirectMessage(app *appContext, target, content string) {
-	toAddr, _ := app.directory.Resolve(target)
+	addr, resolvedName, _ := app.directory.Resolve(target)
+	recipient := chooseName(target, resolvedName)
 	msg := message.Message{
 		MsgID:     newMsgID(),
 		Type:      msgTypeDM,
 		From:      app.identity.Get(),
 		Origin:    app.selfAddr,
-		To:        target,
-		ToAddr:    toAddr,
+		To:        recipient,
+		ToAddr:    addr,
 		Content:   content,
 		Timestamp: time.Now(),
 	}
@@ -293,6 +327,51 @@ func sendDirectMessage(app *appContext, target, content string) {
 	app.sink.ShowMessage(msg)
 	app.cm.Broadcast(msg, "")
 	app.ack.Track(msg)
+	app.persistExternal(msg, recipient)
+}
+
+func chooseName(target, resolved string) string {
+	if resolved != "" {
+		return resolved
+	}
+	return target
+}
+
+func (app *appContext) persistExternal(msg message.Message, receiver string) {
+	if authAPI == nil || *authAPI == "" {
+		return
+	}
+	token := app.identity.Token()
+	if token == "" {
+		return
+	}
+	payload := map[string]interface{}{
+		"sender":  msg.From,
+		"content": msg.Content,
+	}
+	if receiver != "" {
+		payload["receiver"] = receiver
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	url := strings.TrimRight(*authAPI, "/") + "/messages"
+	go func(endpoint string, data []byte, tok string) {
+		req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(data))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+tok)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Printf("auth store: %v", err)
+			return
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}(url, body, token)
 }
 
 func sendAck(app *appContext, original message.Message) {
@@ -367,8 +446,11 @@ func handleCommand(app *appContext, line string) {
 			app.sink.ShowSystem("usage: /nick <name>")
 			return
 		}
-		app.identity.Set(parts[1])
-		app.sink.ShowSystem(fmt.Sprintf("nickname set to %s", parts[1]))
+		if app.identity.SetDisplay(parts[1]) {
+			app.sink.ShowSystem(fmt.Sprintf("nickname set to %s", parts[1]))
+			broadcastHandshake(app)
+		}
+		return
 	case "/stats":
 		snap := app.metrics.Snapshot()
 		app.sink.ShowSystem(snap.String())
@@ -494,7 +576,9 @@ func updatePeerListLoop(app *appContext) {
 		case <-app.ctx.Done():
 			return
 		case <-ticker.C:
-			app.sink.UpdatePeers(app.cm.ConnsList())
+			addrs := app.cm.ConnsList()
+			app.directory.MarkActive(addrs)
+			app.sink.UpdatePeers(app.directory.Snapshot())
 		}
 	}
 }
@@ -585,8 +669,10 @@ func (h *historyBuffer) All() []message.Message {
 }
 
 type identity struct {
-	mu   sync.RWMutex
-	name string
+	mu    sync.RWMutex
+	name  string
+	token string
+	addr  string
 }
 
 func newIdentity(initial, fallback string) *identity {
@@ -602,10 +688,35 @@ func (i *identity) Get() string {
 	return i.name
 }
 
-func (i *identity) Set(name string) {
+func (i *identity) Token() string {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	return i.token
+}
+
+func (i *identity) SetDisplay(name string) bool {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if name == "" {
+		return false
+	}
+	if i.name == name {
+		return false
+	}
 	i.name = name
+	return true
+}
+
+func (i *identity) SetAuth(name, token string) bool {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if name == "" || token == "" {
+		return false
+	}
+	changed := i.name != name || i.token != token
+	i.name = name
+	i.token = token
+	return changed
 }
 
 func newMsgID() string {
@@ -614,4 +725,20 @@ func newMsgID() string {
 		return fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 	return fmt.Sprintf("%x", b)
+}
+
+func broadcastHandshake(app *appContext) {
+	name := app.identity.Get()
+	if name == "" {
+		return
+	}
+	msg := message.Message{
+		MsgID:     newMsgID(),
+		Type:      msgTypeHandshake,
+		From:      name,
+		Origin:    app.selfAddr,
+		AuthToken: app.identity.Token(),
+		Timestamp: time.Now(),
+	}
+	app.cm.Broadcast(msg, "")
 }

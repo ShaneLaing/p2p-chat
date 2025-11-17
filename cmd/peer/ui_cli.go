@@ -45,7 +45,27 @@ func (c *cliDisplay) ShowSystem(text string) {
 	fmt.Printf("[%s] SYSTEM: %s\n", ts, text)
 }
 
-func (c *cliDisplay) UpdatePeers(peers []string) {}
+func (c *cliDisplay) UpdatePeers(peers []peerPresence) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	names := make([]string, 0, len(peers))
+	for _, p := range peers {
+		if p.Name != "" {
+			names = append(names, p.Name)
+		} else {
+			names = append(names, p.Addr)
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	msg := fmt.Sprintf("online: %s", strings.Join(names, ", "))
+	if c.color {
+		fmt.Printf("%s[peers]%s %s\n", ansiSys, ansiReset, msg)
+		return
+	}
+	fmt.Printf("[peers] %s\n", msg)
+}
 
 func (c *cliDisplay) formatLine(msg message.Message) string {
 	ts := msg.Timestamp.Format("15:04:05")

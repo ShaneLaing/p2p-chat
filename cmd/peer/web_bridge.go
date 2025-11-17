@@ -4,15 +4,17 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"strings"
 	"sync"
 
-	"github.com/gorilla/websocket"
-
+	"p2p-chat/internal/authutil"
 	"p2p-chat/internal/message"
+
+	"github.com/gorilla/websocket"
 )
 
 //go:embed webui/static
@@ -27,19 +29,21 @@ type webBridge struct {
 	clientsMu sync.Mutex
 	clients   map[*websocket.Conn]struct{}
 	staticFS  http.Handler
+	onSession func(string, string) error
 }
 
-func newWebBridge(addr string, history *historyBuffer, submit func(string)) (*webBridge, error) {
+func newWebBridge(addr string, history *historyBuffer, submit func(string), onSession func(string, string) error) (*webBridge, error) {
 	sub, err := fs.Sub(webFS, "webui/static")
 	if err != nil {
 		return nil, err
 	}
 	wb := &webBridge{
-		addr:     addr,
-		history:  history,
-		submit:   submit,
-		clients:  make(map[*websocket.Conn]struct{}),
-		staticFS: http.StripPrefix("/static/", http.FileServer(http.FS(sub))),
+		addr:      addr,
+		history:   history,
+		submit:    submit,
+		clients:   make(map[*websocket.Conn]struct{}),
+		staticFS:  http.StripPrefix("/static/", http.FileServer(http.FS(sub))),
+		onSession: onSession,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -47,6 +51,7 @@ func newWebBridge(addr string, history *historyBuffer, submit func(string)) (*we
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", wb.handleIndex)
+	mux.HandleFunc("/chat", wb.handleChat)
 	mux.Handle("/static/", wb.staticFS)
 	mux.HandleFunc("/ws", wb.handleWS)
 	wb.srv = &http.Server{Addr: addr, Handler: mux}
@@ -76,7 +81,15 @@ func (wb *webBridge) Close() {
 }
 
 func (wb *webBridge) handleIndex(w http.ResponseWriter, r *http.Request) {
-	data, err := webFS.ReadFile("webui/static/index.html")
+	wb.serveHTML(w, "webui/static/index.html")
+}
+
+func (wb *webBridge) handleChat(w http.ResponseWriter, r *http.Request) {
+	wb.serveHTML(w, "webui/static/chat.html")
+}
+
+func (wb *webBridge) serveHTML(w http.ResponseWriter, path string) {
+	data, err := webFS.ReadFile(path)
 	if err != nil {
 		http.Error(w, "missing assets", http.StatusInternalServerError)
 		return
@@ -86,6 +99,23 @@ func (wb *webBridge) handleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (wb *webBridge) handleWS(w http.ResponseWriter, r *http.Request) {
+	username := r.URL.Query().Get("username")
+	token := r.URL.Query().Get("token")
+	if username == "" || token == "" {
+		http.Error(w, "missing credentials", http.StatusUnauthorized)
+		return
+	}
+	resolved, err := authutil.ValidateToken(token)
+	if err != nil || !strings.EqualFold(resolved, username) {
+		http.Error(w, "invalid token", http.StatusUnauthorized)
+		return
+	}
+	if wb.onSession != nil {
+		if err := wb.onSession(username, token); err != nil {
+			http.Error(w, fmt.Sprintf("session rejected: %v", err), http.StatusForbidden)
+			return
+		}
+	}
 	conn, err := wb.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("ws upgrade: %v", err)
@@ -162,14 +192,14 @@ func (wb *webBridge) ShowSystem(text string) {
 	wb.sendEvent(webEvent{Kind: "system", Text: text})
 }
 
-func (wb *webBridge) UpdatePeers(peers []string) {
-	wb.sendEvent(webEvent{Kind: "peers", Peers: peers})
+func (wb *webBridge) UpdatePeers(peers []peerPresence) {
+	wb.sendEvent(webEvent{Kind: "peers", Users: peers})
 }
 
 type webEvent struct {
 	Kind    string            `json:"kind"`
 	Message message.Message   `json:"message,omitempty"`
 	Text    string            `json:"text,omitempty"`
-	Peers   []string          `json:"peers,omitempty"`
+	Users   []peerPresence    `json:"users,omitempty"`
 	History []message.Message `json:"history,omitempty"`
 }

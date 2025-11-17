@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>P2P Chat</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body class="chat-body">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">P2P Chat</div>
+        <div class="me-card">
+          <span class="label">Logged in as</span>
+          <span id="me-name">-</span>
+          <button id="logout-btn" class="ghost">Logout</button>
+        </div>
+        <div class="status-card">
+          <div class="status-heading">Online Users</div>
+          <ul id="user-list"></ul>
+        </div>
+      </aside>
+      <main class="chat-pane">
+        <header class="chat-header">
+          <div class="command-bar">
+            <button data-cmd="/peers">Peers</button>
+            <button data-cmd="/history">History</button>
+            <button data-cmd="/stats">Stats</button>
+          </div>
+          <div class="dm-target">
+            <input type="text" id="target" placeholder="DM target (optional)" />
+          </div>
+        </header>
+        <section id="messages" class="message-stream"></section>
+        <form id="composer">
+          <textarea id="input" placeholder="Type a message or /command" rows="2"></textarea>
+          <button type="submit">Send</button>
+        </form>
+      </main>
+    </div>
+    <script src="/static/app.js" type="module"></script>
+  </body>
+</html>
