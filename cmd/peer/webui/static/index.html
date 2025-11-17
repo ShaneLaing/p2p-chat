@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>P2P Chat</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="sidebar">
+        <h1>P2P Chat</h1>
+        <section>
+          <h2>Peers</h2>
+          <ul id="peer-list"></ul>
+        </section>
+        <section>
+          <h2>Commands</h2>
+          <div class="buttons">
+            <button data-cmd="/peers">/peers</button>
+            <button data-cmd="/history">/history</button>
+            <button data-cmd="/stats">/stats</button>
+          </div>
+        </section>
+      </aside>
+      <main>
+        <div id="messages"></div>
+        <form id="composer">
+          <input type="text" id="target" placeholder="target (optional)" />
+          <input type="text" id="input" placeholder="Type a message or /command" autocomplete="off" />
+          <button type="submit">Send</button>
+        </form>
+      </main>
+    </div>
+    <script src="/static/app.js" type="module"></script>
+  </body>
+</html>

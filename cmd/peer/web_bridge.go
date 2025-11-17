@@ -1,0 +1,167 @@
+package main
+
+import (
+	"context"
+	"embed"
+	"encoding/json"
+	"log"
+	"net/http"
+	"strings"
+	"sync"
+
+	"github.com/gorilla/websocket"
+
+	"p2p-chat/internal/message"
+)
+
+//go:embed webui/static
+var webFS embed.FS
+
+type webBridge struct {
+	addr      string
+	srv       *http.Server
+	upgrader  websocket.Upgrader
+	history   *historyBuffer
+	submit    func(string)
+	clientsMu sync.Mutex
+	clients   map[*websocket.Conn]struct{}
+}
+
+func newWebBridge(addr string, history *historyBuffer, submit func(string)) (*webBridge, error) {
+	wb := &webBridge{
+		addr:    addr,
+		history: history,
+		submit:  submit,
+		clients: make(map[*websocket.Conn]struct{}),
+		upgrader: websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool { return true },
+		},
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", wb.handleIndex)
+	mux.HandleFunc("/ws", wb.handleWS)
+	wb.srv = &http.Server{Addr: addr, Handler: mux}
+	return wb, nil
+}
+
+func (wb *webBridge) Run(ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
+	go func() {
+		<-ctx.Done()
+		_ = wb.srv.Shutdown(context.Background())
+	}()
+	log.Printf("web ui listening on http://%s", wb.addr)
+	if err := wb.srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("web ui error: %v", err)
+	}
+	cancel()
+}
+
+func (wb *webBridge) Close() {
+	_ = wb.srv.Shutdown(context.Background())
+	wb.clientsMu.Lock()
+	for conn := range wb.clients {
+		_ = conn.Close()
+	}
+	wb.clientsMu.Unlock()
+}
+
+func (wb *webBridge) handleIndex(w http.ResponseWriter, r *http.Request) {
+	data, err := webFS.ReadFile("webui/static/index.html")
+	if err != nil {
+		http.Error(w, "missing assets", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(data)
+}
+
+func (wb *webBridge) handleWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := wb.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("ws upgrade: %v", err)
+		return
+	}
+	wb.register(conn)
+	go wb.readLoop(conn)
+	wb.sendHistory(conn)
+}
+
+func (wb *webBridge) register(conn *websocket.Conn) {
+	wb.clientsMu.Lock()
+	wb.clients[conn] = struct{}{}
+	wb.clientsMu.Unlock()
+}
+
+func (wb *webBridge) unregister(conn *websocket.Conn) {
+	wb.clientsMu.Lock()
+	delete(wb.clients, conn)
+	wb.clientsMu.Unlock()
+	_ = conn.Close()
+}
+
+func (wb *webBridge) readLoop(conn *websocket.Conn) {
+	defer wb.unregister(conn)
+	for {
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		line := strings.TrimSpace(string(data))
+		if line == "" {
+			continue
+		}
+		go wb.submit(line)
+	}
+}
+
+func (wb *webBridge) sendHistory(conn *websocket.Conn) {
+	event := webEvent{Kind: "history", History: wb.history.All()}
+	wb.sendEventTo(conn, event)
+}
+
+func (wb *webBridge) sendEvent(evt webEvent) {
+	data, err := json.Marshal(evt)
+	if err != nil {
+		log.Printf("web event encode: %v", err)
+		return
+	}
+	wb.clientsMu.Lock()
+	for conn := range wb.clients {
+		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			log.Printf("web send: %v", err)
+			delete(wb.clients, conn)
+			_ = conn.Close()
+		}
+	}
+	wb.clientsMu.Unlock()
+}
+
+func (wb *webBridge) sendEventTo(conn *websocket.Conn, evt webEvent) {
+	data, err := json.Marshal(evt)
+	if err != nil {
+		return
+	}
+	_ = conn.WriteMessage(websocket.TextMessage, data)
+}
+
+func (wb *webBridge) ShowMessage(msg message.Message) {
+	wb.sendEvent(webEvent{Kind: "message", Message: msg})
+}
+
+func (wb *webBridge) ShowSystem(text string) {
+	wb.sendEvent(webEvent{Kind: "system", Text: text})
+}
+
+func (wb *webBridge) UpdatePeers(peers []string) {
+	wb.sendEvent(webEvent{Kind: "peers", Peers: peers})
+}
+
+type webEvent struct {
+	Kind    string            `json:"kind"`
+	Message message.Message   `json:"message,omitempty"`
+	Text    string            `json:"text,omitempty"`
+	Peers   []string          `json:"peers,omitempty"`
+	History []message.Message `json:"history,omitempty"`
+}
