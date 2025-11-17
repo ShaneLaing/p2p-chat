@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"io/fs"
 	"log"
 	"net/http"
 	"strings"
@@ -25,14 +26,20 @@ type webBridge struct {
 	submit    func(string)
 	clientsMu sync.Mutex
 	clients   map[*websocket.Conn]struct{}
+	staticFS  http.Handler
 }
 
 func newWebBridge(addr string, history *historyBuffer, submit func(string)) (*webBridge, error) {
+	sub, err := fs.Sub(webFS, "webui/static")
+	if err != nil {
+		return nil, err
+	}
 	wb := &webBridge{
-		addr:    addr,
-		history: history,
-		submit:  submit,
-		clients: make(map[*websocket.Conn]struct{}),
+		addr:     addr,
+		history:  history,
+		submit:   submit,
+		clients:  make(map[*websocket.Conn]struct{}),
+		staticFS: http.StripPrefix("/static/", http.FileServer(http.FS(sub))),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -40,6 +47,7 @@ func newWebBridge(addr string, history *historyBuffer, submit func(string)) (*we
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", wb.handleIndex)
+	mux.Handle("/static/", wb.staticFS)
 	mux.HandleFunc("/ws", wb.handleWS)
 	wb.srv = &http.Server{Addr: addr, Handler: mux}
 	return wb, nil
