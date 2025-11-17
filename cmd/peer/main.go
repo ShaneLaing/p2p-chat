@@ -73,9 +73,10 @@ func main() {
 
 	store, err := openHistoryStore(*historyDB)
 	if err != nil {
-		log.Fatalf("history db: %v", err)
+		log.Printf("history db unavailable (%v), running without persistence", err)
+	} else {
+		defer store.Close()
 	}
-	defer store.Close()
 
 	identity := newIdentity(*nick, addr)
 	blocklist := newBlockList()
@@ -123,6 +124,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("web ui: %v", err)
 		}
+		webSink = wb
 		sinks = append(sinks, wb)
 		app.web = wb
 		go wb.Run(ctx)
