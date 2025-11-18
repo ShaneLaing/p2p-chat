@@ -63,8 +63,9 @@ textarea {
 
 .app-layout {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 320px;
+  grid-template-columns: 220px minmax(0, 1fr);
   min-height: 100vh;
+  height: 100vh;
   gap: 28px;
   padding: 24px 24px 28px;
 }
@@ -118,6 +119,8 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .top-bar {
@@ -167,10 +170,17 @@ textarea {
   min-height: 0;
   border: 1px solid var(--divider);
   box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
 .panel.is-active {
   display: flex;
+  flex: 1;
+}
+
+#panel-files,
+#panel-settings {
+  overflow-y: auto;
 }
 
 .chat-header {
@@ -207,6 +217,7 @@ textarea {
 
 .message-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
   background: var(--bg-elevated);
@@ -377,20 +388,28 @@ textarea {
 }
 
 .notifications {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  bottom: 24px;
+  width: min(360px, calc(100% - 48px));
   background: var(--bg-panel);
-  border-left: 1px solid var(--divider);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-lg);
   padding: 24px 20px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  transform: translateX(0);
+  transform: translateX(120%);
   transition: transform var(--transition-fast);
   box-shadow: var(--shadow);
+  z-index: 40;
+  pointer-events: none;
 }
 
-.notifications:not(.open) {
-  transform: translateX(100%);
+.notifications.open {
+  transform: translateX(0);
+  pointer-events: auto;
 }
 
 .notifications-header {
@@ -480,20 +499,13 @@ textarea {
     gap: 18px;
     padding: 20px;
   }
-  .notifications {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(360px, 100%);
-    box-shadow: var(--shadow);
-  }
 }
 
 @media (max-width: 900px) {
   .app-layout {
     grid-template-columns: 1fr;
     padding: 16px;
+    height: auto;
   }
   .side-nav {
     flex-direction: row;
@@ -508,5 +520,12 @@ textarea {
   .composer-icon,
   .composer-send {
     width: 100%;
+  }
+  .notifications {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    border-radius: 0;
   }
 }

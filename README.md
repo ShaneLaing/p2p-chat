@@ -13,12 +13,18 @@ Fully implementing stages 1–36 of the spec, this project delivers a secure mes
 
 ## Prerequisites
 - Go 1.21+
-- A running Postgres instance (default DSN: `postgres://postgres:113550057@localhost:5432/p2p_local_server_backend`). Override with `DATABASE_URL` when starting `cmd/auth`.
+- (Optional) A running Postgres instance. Provide its connection string via `DATABASE_URL` (for example, `postgres://user:pass@localhost:5432/p2p_chat`). When it is unset, the auth service still boots but responds with `503 Service Unavailable` for register/login/history endpoints.
 - Modern browser for the web UI.
 
 ## Quick Start
 1. **Bootstrap database (first run only):** create the database described above. The auth server auto-migrates `users` and `messages` tables.
 2. **Run the auth service:**
+	Set `DATABASE_URL` in the same PowerShell session if you want persistence:
+	```powershell
+	$env:DATABASE_URL = "postgres://user:pass@localhost:5432/p2p_chat"  # session only
+	setx DATABASE_URL "postgres://user:pass@localhost:5432/p2p_chat"     # persist for future shells
+	```
+	Then start the server (it will log a warning and serve without persistence if you skip the variable):
 	```powershell
 	cd d:\NYCU_subjects\114-1\GO\Project\p2p-chat
 	go run ./cmd/auth

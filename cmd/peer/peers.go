@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const presenceGrace = 20 * time.Second
+
 type blockList struct {
 	mu      sync.RWMutex
 	blocked map[string]struct{}
@@ -99,16 +101,15 @@ func (p *peerDirectory) Record(name, addr string) {
 func (p *peerDirectory) MarkActive(addrs []string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	active := make(map[string]struct{}, len(addrs))
+	now := time.Now()
 	for _, addr := range addrs {
-		active[addr] = struct{}{}
 		if entry, ok := p.byAddr[addr]; ok {
 			entry.Online = true
-			entry.LastSeen = time.Now()
+			entry.LastSeen = now
 		}
 	}
-	for addr, entry := range p.byAddr {
-		if _, ok := active[addr]; !ok {
+	for _, entry := range p.byAddr {
+		if now.Sub(entry.LastSeen) > presenceGrace {
 			entry.Online = false
 		}
 	}

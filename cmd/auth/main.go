@@ -19,25 +19,26 @@ import (
 	"p2p-chat/internal/authutil"
 )
 
-const defaultDBURL = "postgres://postgres:113550057@localhost:5432/p2p_local_server_backend"
-
 func main() {
 	logger := httplog.NewLogger("auth", httplog.Options{JSON: false})
 
 	dbURL := os.Getenv("DATABASE_URL")
+	var db *sql.DB
 	if dbURL == "" {
-		dbURL = defaultDBURL
-	}
-	db, err := sql.Open("pgx", dbURL)
-	if err != nil {
-		log.Fatalf("open db: %v", err)
-	}
-	defer db.Close()
-	if err := db.Ping(); err != nil {
-		log.Fatalf("db ping: %v", err)
-	}
-	if err := runMigrations(db); err != nil {
-		log.Fatalf("migrate: %v", err)
+		log.Print("DATABASE_URL not set; running without PostgreSQL persistence")
+	} else {
+		var err error
+		db, err = sql.Open("pgx", dbURL)
+		if err != nil {
+			log.Fatalf("open db: %v", err)
+		}
+		defer db.Close()
+		if err := db.Ping(); err != nil {
+			log.Fatalf("db ping: %v", err)
+		}
+		if err := runMigrations(db); err != nil {
+			log.Fatalf("migrate: %v", err)
+		}
 	}
 
 	r := chi.NewRouter()
@@ -93,8 +94,16 @@ type messageRecord struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+func databaseUnavailable(w http.ResponseWriter) {
+	http.Error(w, "database unavailable: set DATABASE_URL to enable persistence", http.StatusServiceUnavailable)
+}
+
 func registerHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if db == nil {
+			databaseUnavailable(w)
+			return
+		}
 		var req registerRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid payload", http.StatusBadRequest)
@@ -122,6 +131,10 @@ func registerHandler(db *sql.DB) http.HandlerFunc {
 
 func loginHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if db == nil {
+			databaseUnavailable(w)
+			return
+		}
 		var req registerRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid payload", http.StatusBadRequest)
@@ -148,6 +161,10 @@ func loginHandler(db *sql.DB) http.HandlerFunc {
 
 func storeMessageHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if db == nil {
+			databaseUnavailable(w)
+			return
+		}
 		user := r.Context().Value(ctxUserKey{}).(string)
 		var req struct {
 			Sender   string  `json:"sender"`
@@ -180,6 +197,10 @@ func storeMessageHandler(db *sql.DB) http.HandlerFunc {
 
 func historyHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if db == nil {
+			databaseUnavailable(w)
+			return
+		}
 		user := r.Context().Value(ctxUserKey{}).(string)
 		target := r.URL.Query().Get("user")
 		if target == "" {

@@ -259,10 +259,10 @@ p2p-chat/
 
 ---
 
-- 環境：Go 1.21+、Postgres、（可選）瀏覽器。
+- 環境：Go 1.21+、（可選）Postgres、（可選）瀏覽器。
 - 流程：
-  1. 啟動 Postgres，設定 `DATABASE_URL`。
-  2. `go run ./cmd/auth`（自動遷移）`go run ./cmd/bootstrap --addr=:8000`
+  1. 啟動 Postgres（如需雲端歷史），並在終端設定 `DATABASE_URL`（例如 `postgres://user:pass@host:5432/p2p_chat`；PowerShell 可用 `$env:DATABASE_URL = "..."` 或 `setx DATABASE_URL "..."`）。若略過此步，auth 服務將以無資料庫模式啟動並回應 `503`。
+  2. `go run ./cmd/auth`（自動遷移；若未設定 `DATABASE_URL` 會提示無法存取資料庫）`go run ./cmd/bootstrap --addr=:8000`
   3. 啟動多個 peer（示例）：
 	 ```powershell
 	 go run ./cmd/peer --port=9001 --secret=supersecret --web --web-addr 127.0.0.1:8081

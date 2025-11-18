@@ -198,6 +198,7 @@ func main() {
 	go pollBootstrapLoop(app)
 	go gossipLoop(app)
 	go updatePeerListLoop(app)
+	go presenceHeartbeatLoop(app)
 
 	if !*enableTUI {
 		go readCLIInput(app)
@@ -659,6 +660,19 @@ func updatePeerListLoop(app *appContext) {
 			addrs := app.cm.ConnsList()
 			app.directory.MarkActive(addrs)
 			app.sink.UpdatePeers(app.directory.Snapshot())
+		}
+	}
+}
+
+func presenceHeartbeatLoop(app *appContext) {
+	ticker := time.NewTicker(25 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-app.ctx.Done():
+			return
+		case <-ticker.C:
+			broadcastHandshake(app)
 		}
 	}
 }
