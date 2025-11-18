@@ -270,6 +270,7 @@ p2p-chat/
 	 ```
      預設會在 `p2p-data/<host>-<port>/` 下建立專屬資料夾並放入 `history.db`、`files.db` 與上傳檔案，無需手動準備資料夾；若需統一放置到其他磁碟，新增 `--data-dir D:\mesh-data` 即可。
 -  4. 透過 `GET /healthz` 監控 auth 服務的資料庫狀態：回傳 200 表示 Postgres 可用，503 則代表 `DATABASE_URL` 缺失或無法連線。
+-  5. 每條 REST 請求都會輸出 JSON log（含 route/method/status/duration/stateless_mode/client），同時在記憶體內維護 `auth_requests_total/login_attempts_total/...` 計數器；重新啟動會歸零，搭配 README 的「Auth Troubleshooting」段落可加速除錯。
 - 可用簡單批次檔或 systemd 管理。
 
 16. 使用指南（Usage Guide）

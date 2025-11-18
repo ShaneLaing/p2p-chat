@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,6 +19,80 @@ import (
 
 	"p2p-chat/internal/authutil"
 )
+
+var metrics authMetrics
+
+type authMetrics struct {
+	authRequests         atomic.Uint64
+	loginAttempts        atomic.Uint64
+	registerAttempts     atomic.Uint64
+	healthChecks         atomic.Uint64
+	statelessModeLogins  atomic.Uint64
+	persistentModeLogins atomic.Uint64
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.status = code
+	sr.ResponseWriter.WriteHeader(code)
+}
+
+type logEntry struct {
+	Route         string `json:"route"`
+	Method        string `json:"method"`
+	Status        int    `json:"status"`
+	DurationMS    int64  `json:"duration_ms"`
+	StatelessMode bool   `json:"stateless_mode"`
+	Client        string `json:"client"`
+	Timestamp     string `json:"timestamp"`
+}
+
+func loggingMiddleware(db *sql.DB) func(http.Handler) http.Handler {
+	stateless := db == nil
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			metrics.authRequests.Add(1)
+			recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+			start := time.Now()
+			next.ServeHTTP(recorder, r)
+			entry := logEntry{
+				Route:         routePattern(r),
+				Method:        r.Method,
+				Status:        recorder.status,
+				DurationMS:    time.Since(start).Milliseconds(),
+				StatelessMode: stateless,
+				Client:        clientOrigin(r),
+				Timestamp:     time.Now().UTC().Format(time.RFC3339Nano),
+			}
+			payload, err := json.Marshal(entry)
+			if err != nil {
+				log.Printf("log marshal error: %v", err)
+				return
+			}
+			log.Print(string(payload))
+		})
+	}
+}
+
+func routePattern(r *http.Request) string {
+	if ctx := chi.RouteContext(r.Context()); ctx != nil {
+		if pattern := ctx.RoutePattern(); pattern != "" {
+			return pattern
+		}
+	}
+	return r.URL.Path
+}
+
+func clientOrigin(r *http.Request) string {
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		return fwd
+	}
+	return r.RemoteAddr
+}
 
 func main() {
 	logger := httplog.NewLogger("auth", httplog.Options{JSON: false})
@@ -50,6 +125,7 @@ func main() {
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+	r.Use(loggingMiddleware(db))
 
 	r.Post("/register", registerHandler(db))
 	r.Post("/login", loginHandler(db))
@@ -95,35 +171,62 @@ type messageRecord struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// databaseUnavailable centralizes the 503 response so handlers (and health checks)
+// databaseUnavailable centralizes the 503 response so handlers
 // always emit the same guidance about configuring DATABASE_URL.
 func databaseUnavailable(w http.ResponseWriter) {
 	http.Error(w, "database unavailable: set DATABASE_URL to enable persistence", http.StatusServiceUnavailable)
 }
 
-// healthHandler reports 200 when the Postgres connection is healthy and 503 when
-// DATABASE_URL is missing or the ping fails, giving operators a lightweight probe.
+// healthHandler reports JSON status along with 200/503 so operators can detect
+// stateless mode programmatically.
 func healthHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		metrics.healthChecks.Add(1)
 		if db == nil {
-			databaseUnavailable(w)
+			writeHealthJSON(w, http.StatusServiceUnavailable, false, "database unavailable: set DATABASE_URL to enable persistence")
 			return
 		}
 		if err := db.PingContext(r.Context()); err != nil {
 			log.Printf("health ping failed: %v", err)
-			databaseUnavailable(w)
+			writeHealthJSON(w, http.StatusServiceUnavailable, false, err.Error())
 			return
 		}
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write([]byte("ok")); err != nil {
-			log.Printf("health response write failed: %v", err)
-		}
+		writeHealthJSON(w, http.StatusOK, true, "ok")
+	}
+}
+
+type healthPayload struct {
+	Status    string `json:"status"`
+	DBEnabled bool   `json:"dbEnabled"`
+	Message   string `json:"message"`
+}
+
+func writeHealthJSON(w http.ResponseWriter, status int, dbEnabled bool, message string) {
+	state := "ok"
+	if status >= 400 {
+		state = "error"
+	}
+	payload := healthPayload{
+		Status:    state,
+		DBEnabled: dbEnabled,
+		Message:   message,
+	}
+	bytes, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("health marshal error: %v", err)
+		databaseUnavailable(w)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if _, err := w.Write(bytes); err != nil {
+		log.Printf("health write error: %v", err)
 	}
 }
 
 func registerHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		metrics.registerAttempts.Add(1)
 		if db == nil {
 			databaseUnavailable(w)
 			return
@@ -155,7 +258,9 @@ func registerHandler(db *sql.DB) http.HandlerFunc {
 
 func loginHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		metrics.loginAttempts.Add(1)
 		if db == nil {
+			metrics.statelessModeLogins.Add(1)
 			databaseUnavailable(w)
 			return
 		}
@@ -178,6 +283,7 @@ func loginHandler(db *sql.DB) http.HandlerFunc {
 			http.Error(w, "token error", http.StatusInternalServerError)
 			return
 		}
+		metrics.persistentModeLogins.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(loginResponse{Token: token, Username: req.Username})
 	}

@@ -79,7 +79,7 @@ The peer automatically persists your outbound messages to `cmd/auth` via `/messa
 - **Theme + Service Worker:** `ui/theme.js` keeps the dark/light toggle in sync across the sidebar + header, while `sw.js` pre-caches the shell and seeds push-notification plumbing.
 - **Notifications:** the drawer listens to both SSE (mentions/system) and WebSocket file events, feeds Browser Notifications when allowed, and stacks alerts into `system` vs `mentions` tabs.
 - **Session enforcement:** `/ws` upgrades only when the provided token validates with `authutil` and optionally informs the peer (via `onSession`) so CLI/TUI output stays in sync.
-- **DB-less awareness:** the login page now probes `/healthz` and shows a teal banner when the auth DB is disabled so operators know persistence is unavailable before attempting to sign in.
+- **DB-less awareness:** the login page now probes `/healthz`, shows a warning banner during stateless mode, and offers a recovery panel that can jump back to the last healthy workspace without blocking the login controls.
 
 ## Auth API
 The auth server (chi + pgx) exposes:
@@ -124,3 +124,39 @@ Manual verification (each item maps to the commit 5 blueprint requirements):
 - When running CLI-only peers, obtain a token from the auth server (or reuse one from localStorage) and pass `--username/--token` to keep the mesh identity consistent with the authenticated one.
 - Per-peer history/files now land in `p2p-data/<host>-<port>/` by default; delete that folder to reset a peer or set `--data-dir` to relocate the storage root.
 - If the login UI shows the teal banner, hit `GET /healthz` on the auth server; a `503` response confirms Postgres is offline/misconfigured, while `200 ok` means persistence is ready.
+
+## Auth Troubleshooting
+
+**Log expectations**
+- Every REST call now emits a JSON log line: `{ "route": "/login", "method": "POST", "status": 503, "duration_ms": 4, "stateless_mode": true, "client": "127.0.0.1:51555", "timestamp": "2025-11-18T02:31:11.941Z" }`.
+- Successful logins in persistent mode look like: `{ "route": "/login", "status": 200, "stateless_mode": false, ... }`.
+- `stateless_mode: true` indicates `DATABASE_URL` is missing/invalid when the request arrived.
+
+**Metrics (in-memory counters)**
+- Maintained counters: `auth_requests_total`, `login_attempts_total`, `register_attempts_total`, `healthz_checks_total`, `stateless_mode_logins_total`, `persistent_mode_logins_total`.
+- Example snapshot right after light testing: `auth_requests_total=42`, `login_attempts_total=6`, `register_attempts_total=2`, `healthz_checks_total=9`, `stateless_mode_logins_total=3`, `persistent_mode_logins_total=3`.
+- Counters reset whenever the auth process restarts because they live in-memory alongside the server.
+
+**Useful curl/PowerShell commands**
+- Mesh workspace health:
+	```bash
+	curl -s http://127.0.0.1:8089/healthz | jq
+	```
+- Lab workspace (useful before pressing **Switch to last known working endpoint**):
+	```bash
+	curl -s http://127.0.0.1:8090/healthz | jq
+	```
+- PowerShell equivalent plus stateless flag extraction:
+	```powershell
+	Invoke-WebRequest http://127.0.0.1:8089/healthz | ConvertFrom-Json | Select-Object status,dbEnabled
+	```
+- Verify stateless vs persistent quickly:
+	```powershell
+	Invoke-WebRequest http://127.0.0.1:8089/healthz | ConvertFrom-Json | ForEach-Object { if (-not $_.dbEnabled) { "Stateless mode" } else { "Persistent mode" } }
+	```
+
+**Common failures and fixes**
+- **DB disabled intentionally:** login still works but `/register`/`/login` respond `503`. The UI shows the warning banner yet the buttons remain usable; persistence resumes once `DATABASE_URL` is set and the server restarts.
+- **Wrong workspace endpoint:** the recovery panel appears after ~300 ms, offering a one-click switch to the last healthy workspace; verify with the curl commands above before switching.
+- **Healthz mismatch vs UI:** if `/healthz` returns `200` but the banner remains, clear the browser cache/localStorage or click “Retry this workspace” to re-run the probe.
+- **Network partitions:** when both `/healthz` calls fail, keep working locally (login attempts will error) and monitor the structured logs for reconnect attempts.

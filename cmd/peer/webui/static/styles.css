@@ -90,18 +90,41 @@ button.ghost {
   border: 1px solid #2563eb;
 }
 
-/* Banner used to explain DB-less mode on the login card. */
-.banner {
+.hidden {
+  display: none !important;
+}
+
+/* Inline warning that keeps the login form usable in stateless mode. */
+.warning-message {
   margin: 0;
   padding: 0.75rem;
   border-radius: 10px;
-  background: rgba(15, 118, 110, 0.2);
-  color: #5eead4;
+  background: rgba(14, 116, 144, 0.25);
+  color: #67e8f9;
   font-size: 0.9rem;
 }
 
-.banner.hidden {
+.warning-message.hidden {
   display: none;
+}
+
+.login-box.recovery {
+  border: 1px dashed #f87171;
+  background: rgba(20, 20, 20, 0.5);
+}
+
+.login-box.recovery .subtitle {
+  color: #fca5a5;
+}
+
+.login-box button.full {
+  width: 100%;
+}
+
+.retry-link {
+  color: #93c5fd;
+  text-decoration: underline;
+  text-align: center;
 }
 
 .status {

@@ -12,8 +12,8 @@
       <section class="login-box">
         <div class="brand">P2P Chat</div>
         <p class="subtitle">Step 1 · Authenticate</p>
-        <!-- Banner toggled when the auth DB is disabled so operators see the friendly notice. -->
-        <p id="db-banner" class="banner hidden">Auth server running, but database is disabled. Login data will not be persistent.</p>
+        <!-- Warning stays inline so users can continue logging in even in stateless mode. -->
+        <p id="warning-message" class="warning-message hidden">Auth server running, but database is disabled. Login data will not be persistent.</p>
         <input id="user" placeholder="Username" autocomplete="username" />
         <input id="pass" placeholder="Password" type="password" autocomplete="current-password" />
         <div class="login-actions">
@@ -32,6 +32,14 @@
           <option value="lab">Lab Cluster</option>
         </select>
         <p class="text-muted">Workspaces simply change the default bootstrap/auth endpoints.</p>
+      </section>
+
+      <!-- Recovery Card appears only when the selected workspace cannot be reached quickly. -->
+      <section id="recovery-panel" class="login-box recovery hidden">
+        <p class="subtitle">Current workspace unavailable</p>
+        <p class="text-muted">We could not reach the selected auth endpoint in time. You can retry or jump back to the last healthy workspace.</p>
+        <button id="switch-endpoint" class="full">Switch to last known working endpoint</button>
+        <a id="retry-workspace" href="#" class="retry-link">Retry this workspace</a>
       </section>
     </main>
     <script src="/static/login.js" type="module"></script>
