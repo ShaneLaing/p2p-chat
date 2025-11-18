@@ -1,4 +1,22 @@
-const API_BASE = "http://127.0.0.1:8089";
+const WORKSPACES = {
+  mesh: {
+    auth: "http://127.0.0.1:8089",
+    bootstrap: "http://127.0.0.1:8000",
+  },
+  lab: {
+    auth: "http://127.0.0.1:8090",
+    bootstrap: "http://127.0.0.1:8100",
+  },
+};
+
+const workspaceSelect = document.getElementById("workspace");
+if (workspaceSelect) {
+  const stored = localStorage.getItem("workspace");
+  if (stored && WORKSPACES[stored]) {
+    workspaceSelect.value = stored;
+  }
+}
+const API_BASE = () => WORKSPACES[workspaceSelect?.value || "mesh"].auth;
 const user = document.getElementById("user");
 const pass = document.getElementById("pass");
 const msg = document.getElementById("msg");
@@ -25,7 +43,7 @@ async function authenticate(path) {
     return;
   }
   try {
-    const res = await fetch(`${API_BASE}/${path}`, {
+    const res = await fetch(`${API_BASE()}/${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -41,9 +59,12 @@ async function authenticate(path) {
       return;
     }
     const data = await res.json();
+    const workspace = WORKSPACES[workspaceSelect?.value || "mesh"];
     localStorage.setItem("token", data.token);
     localStorage.setItem("username", data.username);
-    localStorage.setItem("auth_api", API_BASE);
+    localStorage.setItem("auth_api", workspace.auth);
+    localStorage.setItem("bootstrap_url", workspace.bootstrap);
+    localStorage.setItem("workspace", workspaceSelect?.value || "mesh");
     window.location.href = "/chat";
   } catch (err) {
     console.error(err);

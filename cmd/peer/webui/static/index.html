@@ -3,21 +3,35 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>P2P Chat Login</title>
+    <title>P2P Chat Onboarding</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body class="login-body">
-    <div class="login-box">
-      <div class="brand">P2P Chat</div>
-      <p class="subtitle">Sign in to start chatting</p>
-      <input id="user" placeholder="Username" autocomplete="username" />
-      <input id="pass" placeholder="Password" type="password" autocomplete="current-password" />
-      <div class="login-actions">
-        <button id="login-btn">Login</button>
-        <button id="register-btn" class="ghost">Register</button>
-      </div>
-      <p id="msg" class="status"></p>
-    </div>
+    <main class="onboarding">
+      <!-- Auth Card -->
+      <section class="login-box">
+        <div class="brand">P2P Chat</div>
+        <p class="subtitle">Step 1 · Authenticate</p>
+        <input id="user" placeholder="Username" autocomplete="username" />
+        <input id="pass" placeholder="Password" type="password" autocomplete="current-password" />
+        <div class="login-actions">
+          <button id="login-btn">Continue</button>
+          <button id="register-btn" class="ghost">Register</button>
+        </div>
+        <p id="msg" class="status"></p>
+      </section>
+
+      <!-- Workspace Card -->
+      <section class="login-box secondary">
+        <p class="subtitle">Step 2 · Select workspace</p>
+        <label for="workspace">Workspace</label>
+        <select id="workspace">
+          <option value="mesh">Mesh Home</option>
+          <option value="lab">Lab Cluster</option>
+        </select>
+        <p class="text-muted">Workspaces simply change the default bootstrap/auth endpoints.</p>
+      </section>
+    </main>
     <script src="/static/login.js" type="module"></script>
   </body>
 </html>

@@ -67,6 +67,22 @@ func (c *cliDisplay) UpdatePeers(peers []peerPresence) {
 	fmt.Printf("[peers] %s\n", msg)
 }
 
+func (c *cliDisplay) ShowNotification(n notificationPayload) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ts := n.Timestamp.Format("15:04:05")
+	prefix := "NOTIFY"
+	if n.Level != "" {
+		prefix = strings.ToUpper(n.Level)
+	}
+	line := fmt.Sprintf("[%s] %s: %s", ts, prefix, n.Text)
+	if c.color {
+		fmt.Printf("%s%s%s\n", ansiSys, line, ansiReset)
+		return
+	}
+	fmt.Println(line)
+}
+
 func (c *cliDisplay) formatLine(msg message.Message) string {
 	ts := msg.Timestamp.Format("15:04:05")
 	label := ""

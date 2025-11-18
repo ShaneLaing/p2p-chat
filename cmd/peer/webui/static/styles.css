@@ -22,6 +22,13 @@ body {
   background: radial-gradient(circle at top, #1d4ed8, #0f172a 50%);
 }
 
+.onboarding {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
 .login-box {
   background: rgba(15, 23, 42, 0.9);
   padding: 2rem;
@@ -31,6 +38,18 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+}
+
+.login-box.secondary {
+  opacity: 0.9;
+}
+
+.login-box select {
+  padding: 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #1f2937;
+  background: #111827;
+  color: #e2e8f0;
 }
 
 .brand {

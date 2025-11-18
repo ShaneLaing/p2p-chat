@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"go.etcd.io/bbolt"
@@ -10,6 +12,8 @@ import (
 	"p2p-chat/internal/message"
 )
 
+// historyBucket keeps JSON-encoded message blobs keyed by
+// `<timestamp>-<msgID>` so iterating with a reverse cursor returns newest-first.
 const historyBucket = "messages"
 
 type historyStore struct {
@@ -17,6 +21,9 @@ type historyStore struct {
 }
 
 func openHistoryStore(path string) (*historyStore, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
 	db, err := bbolt.Open(path, 0o600, &bbolt.Options{Timeout: time.Second})
 	if err != nil {
 		return nil, err

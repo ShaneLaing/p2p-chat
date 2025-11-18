@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +33,10 @@ const (
 	msgTypeAck       = "ack"
 	msgTypePeerSync  = "peer_sync"
 	msgTypeHandshake = "handshake"
+
+	defaultHistoryDBPath = "p2p-chat-history.db"
+	defaultFilesDirPath  = "p2p-files"
+	defaultFilesDBPath   = "p2p-files.db"
 )
 
 var (
@@ -47,7 +53,10 @@ var (
 	enableTUI    = flag.Bool("tui", false, "enable terminal UI mode")
 	enableWeb    = flag.Bool("web", false, "serve local web UI")
 	webAddr      = flag.String("web-addr", "127.0.0.1:8081", "address for embedded web UI server")
-	historyDB    = flag.String("history-db", "p2p-chat-history.db", "path to persisted chat history db")
+	historyDB    = flag.String("history-db", defaultHistoryDBPath, "path to persisted chat history db")
+	filesDir     = flag.String("files-dir", defaultFilesDirPath, "directory to store uploaded files")
+	filesDB      = flag.String("files-db", defaultFilesDBPath, "path to persisted file metadata db")
+	dataDir      = flag.String("data-dir", "p2p-data", "base directory for auto-generated peer data (history/files)")
 	authAPI      = flag.String("auth-api", "http://127.0.0.1:8089", "authentication server base url")
 )
 
@@ -60,6 +69,23 @@ func main() {
 	addr := *listenAddr
 	if addr == "" {
 		addr = fmt.Sprintf("127.0.0.1:%d", *port)
+	}
+
+	if err := os.MkdirAll(*dataDir, 0o755); err != nil {
+		log.Fatalf("init data dir: %v", err)
+	}
+	peerDir := derivePeerDir(*dataDir, addr)
+	if err := os.MkdirAll(peerDir, 0o755); err != nil {
+		log.Fatalf("prepare peer dir: %v", err)
+	}
+	if *historyDB == defaultHistoryDBPath {
+		*historyDB = filepath.Join(peerDir, "history.db")
+	}
+	if *filesDB == defaultFilesDBPath {
+		*filesDB = filepath.Join(peerDir, "files.db")
+	}
+	if *filesDir == defaultFilesDirPath {
+		*filesDir = filepath.Join(peerDir, "files")
 	}
 
 	box, err := crypto.NewBox(*secret)
@@ -83,6 +109,15 @@ func main() {
 		defer store.Close()
 	}
 
+	var files *fileStore
+	if *enableWeb {
+		files, err = openFileStore(*filesDB, *filesDir)
+		if err != nil {
+			log.Fatalf("file store: %v", err)
+		}
+		defer files.Close()
+	}
+
 	identity := newIdentity(*nick, addr)
 	if *usernameFlag != "" && *tokenFlag != "" {
 		identity.SetAuth(*usernameFlag, *tokenFlag)
@@ -100,6 +135,7 @@ func main() {
 		cache:     cache,
 		history:   history,
 		store:     store,
+		files:     files,
 		blocklist: blocklist,
 		directory: directory,
 		metrics:   metrics,
@@ -139,7 +175,7 @@ func main() {
 			}
 			return nil
 		}
-		wb, err := newWebBridge(*webAddr, history, func(line string) { processLine(app, line) }, setter)
+		wb, err := newWebBridge(*webAddr, history, func(line string) { processLine(app, line) }, setter, files)
 		if err != nil {
 			log.Fatalf("web ui: %v", err)
 		}
@@ -177,6 +213,49 @@ func main() {
 	}
 	dialer.Close()
 	cm.Stop()
+}
+
+func derivePeerDir(base, addr string) string {
+	if base == "" {
+		base = "."
+	}
+	hostPart := "peer"
+	portPart := "peer"
+	if host, port, err := net.SplitHostPort(addr); err == nil {
+		if host != "" {
+			hostPart = sanitizePathToken(host)
+		}
+		if port != "" {
+			portPart = sanitizePathToken(port)
+		}
+	} else if addr != "" {
+		hostPart = sanitizePathToken(strings.ReplaceAll(addr, ":", "_"))
+	}
+	folder := fmt.Sprintf("%s-%s", hostPart, portPart)
+	return filepath.Join(base, folder)
+}
+
+func sanitizePathToken(val string) string {
+	val = strings.TrimSpace(val)
+	if val == "" {
+		return "peer"
+	}
+	var b strings.Builder
+	for _, r := range val {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-', r == '_':
+			b.WriteRune(r)
+		case r == '.', r == ':':
+			b.WriteRune('-')
+		}
+	}
+	out := b.String()
+	if out == "" {
+		return "peer"
+	}
+	return out
 }
 
 func readCLIInput(app *appContext) {
@@ -280,6 +359,7 @@ func (app *appContext) processIncoming(msg message.Message) {
 	}
 	app.metrics.IncSeen()
 	app.sink.ShowMessage(msg)
+	app.maybeNotify(msg)
 	sendAck(app, msg)
 	app.cm.Broadcast(msg, "")
 }
@@ -598,6 +678,7 @@ type appContext struct {
 	cache     *msgCache
 	history   *historyBuffer
 	store     *historyStore
+	files     *fileStore
 	blocklist *blockList
 	directory *peerDirectory
 	metrics   *metrics
@@ -741,4 +822,31 @@ func broadcastHandshake(app *appContext) {
 		Timestamp: time.Now(),
 	}
 	app.cm.Broadcast(msg, "")
+}
+
+func (app *appContext) maybeNotify(msg message.Message) {
+	self := app.identity.Get()
+	if self == "" || strings.EqualFold(msg.From, self) {
+		return
+	}
+	n := notificationPayload{
+		ID:        msg.MsgID,
+		From:      msg.From,
+		Timestamp: time.Now(),
+	}
+	if msg.Type == msgTypeDM {
+		if strings.EqualFold(msg.To, self) || strings.EqualFold(msg.ToAddr, app.selfAddr) {
+			n.Level = "dm"
+			n.Text = fmt.Sprintf("%s sent you a direct message", msg.From)
+			app.sink.ShowNotification(n)
+		}
+		return
+	}
+	content := strings.ToLower(msg.Content)
+	needle := strings.ToLower(self)
+	if content != "" && strings.Contains(content, needle) {
+		n.Level = "mention"
+		n.Text = fmt.Sprintf("%s mentioned you", msg.From)
+		app.sink.ShowNotification(n)
+	}
 }

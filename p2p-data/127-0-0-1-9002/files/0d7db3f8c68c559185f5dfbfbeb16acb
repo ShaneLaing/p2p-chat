@@ -1,0 +1,58 @@
+#include <bits/stdc++.h>
+using namespace std;
+using ll = long long;
+
+vector<ll> weight, subtreeWeight;
+vector<int> subtreeSize;
+vector<vector<int>> adj;
+ll ans = 0, timer = 0;
+
+void dfs_info(int u) {
+    subtreeWeight[u] = weight[u];
+    subtreeSize[u] = 1;
+
+    for (int v : adj[u]) {
+        dfs_info(v);
+        subtreeWeight[u] += subtreeWeight[v];
+        subtreeSize[u] += subtreeSize[v];
+    }
+}
+
+void dfs(int u) {
+    ans += weight[u] * (++timer);
+    for (int v : adj[u]) dfs(v);
+}
+
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+
+    int n;
+    cin >> n;
+
+    weight.resize(n+1);
+    subtreeWeight.resize(n+1);
+    subtreeSize.resize(n+1);
+    adj.resize(n+1);
+
+    for (int i = 1; i <= n; i++) cin >> weight[i];
+    for (int i = 2; i <= n; i++) {
+        int p; cin >> p;
+        adj[p].push_back(i);
+    }
+
+    dfs_info(1);
+
+    for (int u = 1; u <= n; u++) {
+        sort(adj[u].begin(), adj[u].end(), [&](int a, int b) {
+            ll lhs = (ll)subtreeWeight[a] * subtreeSize[b];
+            ll rhs = (ll)subtreeWeight[b] * subtreeSize[a];
+            return lhs < rhs;
+        });
+    }
+
+    dfs(1);
+
+    cout << ans << "\n";
+    return 0;
+}

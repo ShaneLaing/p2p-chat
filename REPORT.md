@@ -205,11 +205,26 @@ p2p-chat/
 
 ---
 
-- 目前以手動測試為主（`go run` 多個 peers + web UI）。
-- 建議補齊：
-  - 單元測試：msgCache、peerDirectory、authutil。
-  - 整合測試：模擬 bootstrap + 2 peers 的訊息流。
-  - Web E2E：利用 Playwright 自動登入/傳訊。
+**自動化檢查**
+
+- `gofmt -w cmd/peer/web_bridge.go cmd/peer/history_store.go cmd/peer/files_store.go` 確保 Go 程式碼風格一致。
+- `go build ./...` 驗證三個執行檔（bootstrap/peer/auth）與模組皆可成功編譯。
+- `node cmd/peer/webui/static/ui/__tests__/theme.test.mjs` 檢查狀態儲存與主題切換邏輯。
+- `node cmd/peer/webui/static/ui/__tests__/settings.test.mjs` 驗證設定面板的狀態同步與通知鎖。
+
+**手動 QA**
+
+- 啟動 bootstrap/auth/兩個 peer 的 web 模式後登入，使用 **Send** 按鈕送出訊息並確認 CLI/TUI/WS 均收到。
+- 在 sidebar 切換 light/dark 主題後重新整理，確保 `state.js` 持久化資料生效。
+- 於 Settings 變更通知/裝置標籤，觀察 toast 與 store 反饋同步。
+- 從 Files 面板拖曳檔案，上傳進度條與其他 peer 的通知抽屜皆應更新；下載檔案須帶 JWT 查詢字串。
+- 對另一位使用者發出 @mention，允許瀏覽器通知後確認抽屜堆疊與 OS toast 同步；檢查 `sw.js` 已快取殼層。
+
+**後續建議**
+
+- 為 BoltDB store、ConnManager、新的 `files_store` 與通知橋接撰寫 Go 單元測試。
+- 以 Playwright 或 Cypress 增補 web E2E（登入、傳訊息、上傳檔案、通知）。
+- 以 docker-compose 自動化啟動 bootstrap/auth/peer，以利 CI 重現。
 
 12. 效能分析
 
@@ -247,9 +262,13 @@ p2p-chat/
 - 環境：Go 1.21+、Postgres、（可選）瀏覽器。
 - 流程：
   1. 啟動 Postgres，設定 `DATABASE_URL`。
-  2. `go run ./cmd/auth`（自動遷移）
-  3. `go run ./cmd/bootstrap --addr=:8000`
-  4. 啟動多個 peer：`go run ./cmd/peer --port=9001 --secret=supersecret --web`
+  2. `go run ./cmd/auth`（自動遷移）`go run ./cmd/bootstrap --addr=:8000`
+  3. 啟動多個 peer（示例）：
+	 ```powershell
+	 go run ./cmd/peer --port=9001 --secret=supersecret --web --web-addr 127.0.0.1:8081
+	 go run ./cmd/peer --port=9002 --secret=supersecret --web --web-addr 127.0.0.1:8082
+	 ```
+     預設會在 `p2p-data/<host>-<port>/` 下建立專屬資料夾並放入 `history.db`、`files.db` 與上傳檔案，無需手動準備資料夾；若需統一放置到其他磁碟，新增 `--data-dir D:\mesh-data` 即可。
 - 可用簡單批次檔或 systemd 管理。
 
 16. 使用指南（Usage Guide）
@@ -258,7 +277,7 @@ p2p-chat/
 
 - CLI 與 TUI：在終端輸入文字或 `/command`。
 - Web：開啟 `http://<web-addr>` → 登入 → 在 UI 中輸入文字。
-- 常見 Config：`--secret`, `--auth-api`, `--bootstrap`, `--history-db`, `--web-addr`。
+- 常見 Config：`--secret`, `--auth-api`, `--bootstrap`, `--data-dir`, `--history-db`, `--files-db`, `--files-dir`, `--web-addr`。
 - 輸入/輸出：文字訊息採 JSON 封包 `{type, from, content, timestamp}`；REST 回應為 JSON 或文字錯誤。
 - Demo：使用 README 中的 quick-start 指令即可重現兩人對話。
 
@@ -268,10 +287,21 @@ p2p-chat/
 
 - 已知限制：
   - Mesh 連線數成長後，泛洪成本上升。
-  - 尚未有自動化測試/CI。
-  - Web UI 尚未實作推播或檔案傳輸。
+  - 自動化測試覆蓋率仍有限，尚未引入 CI。
+  - Push API 目前只作為 service worker scaffold，尚未串接實際推播服務。
 - 技術債：`cmd/peer/main.go` 過於龐大；需拆模組並加 interface。
 - 改善方向：
   - 導入真正的 gossip/overlay protocol。
   - 增加離線訊息與多裝置同步。
-  - Web UI 加入通知、表情、暗色主題切換。
+  - 將瀏覽器通知延伸為真正的 Web Push，並加入更進階的檔案快取/續傳機制。
+
+18. UI Revamp（Architecture & Flow, Commit 5）
+
+---
+
+- **Layout Shell:** `app.html` 取代舊的 `chat.html`，Layout/SideNav/TopBar/Drawer 皆以註解標示，模組（`ui/chat.js`, `ui/files.js`, `ui/settings.js`, `ui/notifications.js`, `ui/theme.js`）以命名節點掛載，`app.css` 在 `:root[data-theme=*]` 宣告亮/暗色系並標記事件列、進度條、設定卡片等複雜選擇器。
+- **Modular JS:** `app.js` 只負責啟動輕量 reactive store（`state.js`）、WebSocket dispatcher（`ws.js`）與 UI/Component 模組（例如 `components/messageBubble.js`, `components/composer.js`, `components/notificationList.js`, `components/transferList.js`）。每個檔案開頭都有功能說明與 export 註解。
+- **Theme & Settings:** 雙主題按鈕呼叫 `ui/theme.js` → `state.js`，以 `data-theme` 即時套用 CSS 變數；`ui/settings.js` 則提供通知開關、裝置暱稱與即時回饋（含 Notification API 權限提示）。
+- **Files & Notifications:** `/api/files` 與前端 `ui/files.js` 整合，上傳使用 `XMLHttpRequest` 回報進度、下載自動掛 JWT Query。檔案完成後除了 WebSocket `kind:"file"` 事件外，也推送 SSE `notification` 以更新 Notification Drawer。
+- **Service Worker & Browser APIs:** 新增 `sw.js` 緩存 layout shell 並處理 push scaffold；Notification Drawer 同步 SSE/WS，並在允許時觸發 browser-level toast。
+- **Tests & Docs:** 加入 Node-based stub 測試（`ui/__tests__/theme.test.mjs`、`ui/__tests__/settings.test.mjs`），README/REPORT 也更新以描述模組化 UI、Service Worker 與 QA 流程。

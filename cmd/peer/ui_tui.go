@@ -112,3 +112,10 @@ func (t *tuiDisplay) UpdatePeers(peers []peerPresence) {
 		}
 	})
 }
+
+func (t *tuiDisplay) ShowNotification(n notificationPayload) {
+	content := fmt.Sprintf("[orange]** %s [-] %s\n", strings.ToUpper(n.Level), n.Text)
+	t.app.QueueUpdateDraw(func() {
+		fmt.Fprint(t.messages, content)
+	})
+}

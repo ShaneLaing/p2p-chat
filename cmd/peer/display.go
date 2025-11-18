@@ -1,6 +1,10 @@
 package main
 
-import "p2p-chat/internal/message"
+import (
+	"time"
+
+	"p2p-chat/internal/message"
+)
 
 type peerPresence struct {
 	Name   string `json:"name"`
@@ -13,6 +17,7 @@ type displaySink interface {
 	ShowMessage(message.Message)
 	ShowSystem(string)
 	UpdatePeers([]peerPresence)
+	ShowNotification(notificationPayload)
 }
 
 type multiSink struct {
@@ -45,4 +50,21 @@ func (m *multiSink) UpdatePeers(peers []peerPresence) {
 			sink.UpdatePeers(peers)
 		}
 	}
+}
+
+func (m *multiSink) ShowNotification(n notificationPayload) {
+	for _, sink := range m.sinks {
+		if sink != nil {
+			sink.ShowNotification(n)
+		}
+	}
+}
+
+// notificationPayload provides a consistent structure for mentions, DMs, etc.
+type notificationPayload struct {
+	ID        string    `json:"id"`
+	Text      string    `json:"text"`
+	Level     string    `json:"level"`
+	Timestamp time.Time `json:"timestamp"`
+	From      string    `json:"from"`
 }
