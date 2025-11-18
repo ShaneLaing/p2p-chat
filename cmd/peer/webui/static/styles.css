@@ -3,6 +3,11 @@
   font-family: "Segoe UI", "Noto Sans", sans-serif;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
   background: #0f172a;
@@ -74,12 +79,14 @@ button.ghost {
 .chat-body {
   background: #020617;
   min-height: 100vh;
+  overflow: hidden;
 }
 
 .app-shell {
   display: grid;
   grid-template-columns: 280px 1fr;
   min-height: 100vh;
+  height: 100vh;
 }
 
 .sidebar {
@@ -121,6 +128,8 @@ button.ghost {
   flex-direction: column;
   padding: 1.5rem;
   gap: 1rem;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .chat-header {
@@ -229,5 +238,11 @@ button.ghost {
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
+  }
+  .chat-body {
+    overflow: auto;
+  }
+  .chat-pane {
+    height: auto;
   }
 }
