@@ -53,6 +53,7 @@ func main() {
 
 	r.Post("/register", registerHandler(db))
 	r.Post("/login", loginHandler(db))
+	r.Get("/healthz", healthHandler(db))
 	authenticated := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := parseTokenFromHeader(r.Header.Get("Authorization"))
@@ -94,8 +95,31 @@ type messageRecord struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+// databaseUnavailable centralizes the 503 response so handlers (and health checks)
+// always emit the same guidance about configuring DATABASE_URL.
 func databaseUnavailable(w http.ResponseWriter) {
 	http.Error(w, "database unavailable: set DATABASE_URL to enable persistence", http.StatusServiceUnavailable)
+}
+
+// healthHandler reports 200 when the Postgres connection is healthy and 503 when
+// DATABASE_URL is missing or the ping fails, giving operators a lightweight probe.
+func healthHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if db == nil {
+			databaseUnavailable(w)
+			return
+		}
+		if err := db.PingContext(r.Context()); err != nil {
+			log.Printf("health ping failed: %v", err)
+			databaseUnavailable(w)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte("ok")); err != nil {
+			log.Printf("health response write failed: %v", err)
+		}
+	}
 }
 
 func registerHandler(db *sql.DB) http.HandlerFunc {

@@ -90,6 +90,20 @@ button.ghost {
   border: 1px solid #2563eb;
 }
 
+/* Banner used to explain DB-less mode on the login card. */
+.banner {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 10px;
+  background: rgba(15, 118, 110, 0.2);
+  color: #5eead4;
+  font-size: 0.9rem;
+}
+
+.banner.hidden {
+  display: none;
+}
+
 .status {
   min-height: 1.2rem;
   color: #fca5a5;

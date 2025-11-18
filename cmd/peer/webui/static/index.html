@@ -12,6 +12,8 @@
       <section class="login-box">
         <div class="brand">P2P Chat</div>
         <p class="subtitle">Step 1 · Authenticate</p>
+        <!-- Banner toggled when the auth DB is disabled so operators see the friendly notice. -->
+        <p id="db-banner" class="banner hidden">Auth server running, but database is disabled. Login data will not be persistent.</p>
         <input id="user" placeholder="Username" autocomplete="username" />
         <input id="pass" placeholder="Password" type="password" autocomplete="current-password" />
         <div class="login-actions">

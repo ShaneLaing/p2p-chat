@@ -269,6 +269,7 @@ p2p-chat/
 	 go run ./cmd/peer --port=9002 --secret=supersecret --web --web-addr 127.0.0.1:8082
 	 ```
      預設會在 `p2p-data/<host>-<port>/` 下建立專屬資料夾並放入 `history.db`、`files.db` 與上傳檔案，無需手動準備資料夾；若需統一放置到其他磁碟，新增 `--data-dir D:\mesh-data` 即可。
+-  4. 透過 `GET /healthz` 監控 auth 服務的資料庫狀態：回傳 200 表示 Postgres 可用，503 則代表 `DATABASE_URL` 缺失或無法連線。
 - 可用簡單批次檔或 systemd 管理。
 
 16. 使用指南（Usage Guide）
@@ -305,3 +306,4 @@ p2p-chat/
 - **Files & Notifications:** `/api/files` 與前端 `ui/files.js` 整合，上傳使用 `XMLHttpRequest` 回報進度、下載自動掛 JWT Query。檔案完成後除了 WebSocket `kind:"file"` 事件外，也推送 SSE `notification` 以更新 Notification Drawer。
 - **Service Worker & Browser APIs:** 新增 `sw.js` 緩存 layout shell 並處理 push scaffold；Notification Drawer 同步 SSE/WS，並在允許時觸發 browser-level toast。
 - **Tests & Docs:** 加入 Node-based stub 測試（`ui/__tests__/theme.test.mjs`、`ui/__tests__/settings.test.mjs`），README/REPORT 也更新以描述模組化 UI、Service Worker 與 QA 流程。
+- **Auth Onboarding Banner:** 登入頁面會先呼叫 `/healthz`，若發現資料庫停用則在 Step 1 卡片頂端顯示醒目的提示，避免使用者被 503 訊息嚇到。

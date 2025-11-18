@@ -79,6 +79,7 @@ The peer automatically persists your outbound messages to `cmd/auth` via `/messa
 - **Theme + Service Worker:** `ui/theme.js` keeps the dark/light toggle in sync across the sidebar + header, while `sw.js` pre-caches the shell and seeds push-notification plumbing.
 - **Notifications:** the drawer listens to both SSE (mentions/system) and WebSocket file events, feeds Browser Notifications when allowed, and stacks alerts into `system` vs `mentions` tabs.
 - **Session enforcement:** `/ws` upgrades only when the provided token validates with `authutil` and optionally informs the peer (via `onSession`) so CLI/TUI output stays in sync.
+- **DB-less awareness:** the login page now probes `/healthz` and shows a teal banner when the auth DB is disabled so operators know persistence is unavailable before attempting to sign in.
 
 ## Auth API
 The auth server (chi + pgx) exposes:
@@ -89,6 +90,7 @@ The auth server (chi + pgx) exposes:
 | POST   | `/login`   | Verify password, return JWT + username       |
 | POST   | `/messages`| Authenticated peers persist outbound content |
 | GET    | `/history` | Authenticated fetch of recent chat/dm events |
+| GET    | `/healthz` | Returns 200 when Postgres is reachable, 503 otherwise |
 
 JWTs are signed via `internal/authutil` and validated both at the WebSocket boundary and inside peer handshakes so impersonation attempts are rejected.
 
@@ -121,3 +123,4 @@ Manual verification (each item maps to the commit 5 blueprint requirements):
 - Point multiple peers at the same auth server to share login state and cloud history.
 - When running CLI-only peers, obtain a token from the auth server (or reuse one from localStorage) and pass `--username/--token` to keep the mesh identity consistent with the authenticated one.
 - Per-peer history/files now land in `p2p-data/<host>-<port>/` by default; delete that folder to reset a peer or set `--data-dir` to relocate the storage root.
+- If the login UI shows the teal banner, hit `GET /healthz` on the auth server; a `503` response confirms Postgres is offline/misconfigured, while `200 ok` means persistence is ready.
