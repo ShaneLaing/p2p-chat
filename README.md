@@ -98,6 +98,7 @@ JWTs are signed via `internal/authutil` and validated both at the WebSocket boun
 - `go build ./...` and `go test ./...` to validate Go changes; run the lightweight UI checks with `node cmd/peer/webui/static/ui/__tests__/theme.test.mjs` and `node cmd/peer/webui/static/ui/__tests__/settings.test.mjs`.
 - Run `gofmt ./...` before committing.
 - The repo intentionally stays dependency-light: chi, pgx, gorilla/websocket, and `golang-jwt` cover all external needs; the browser UI is written in plain ES modules (no bundler required).
+- Lint the Go codebase with `golangci-lint run ./...`. On Windows, download the prebuilt `golangci-lint-<version>-windows-amd64.zip`, extract it into `bin/`, and ensure `${workspaceFolder}/bin` is on your `PATH` (or call `.\bin\golangci-lint.exe run ./...`). If your global Go installation is newer than the module target, run the linter with `GOTOOLCHAIN=go1.21.9` (the provided VS Code task sets this automatically).
 
 ## Build & QA Checklist
 Run these steps before publishing a change to ensure Go, UI, and browser features stay aligned:

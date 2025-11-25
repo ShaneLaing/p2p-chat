@@ -1,0 +1,28 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - govet
+    - staticcheck
+    - ineffassign
+    - gofmt
+    - revive
+
+linters-settings:
+  staticcheck:
+    checks:
+      - all
+      - -SA4023
+  revive:
+    rules:
+      - name: indent-error-flow
+      - name: var-naming
+      - name: receiver-naming
+      - name: package-comments
+
+issues:
+  exclude-use-default: false
+  exclude-dirs:
+    - vendor

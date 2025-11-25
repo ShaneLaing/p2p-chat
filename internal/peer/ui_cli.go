@@ -1,4 +1,4 @@
-package main
+package peer
 
 import (
 	"fmt"
@@ -11,13 +11,9 @@ import (
 	"p2p-chat/internal/message"
 )
 
-const (
-	ansiReset = "\x1b[0m"
-	ansiTime  = "\x1b[36m"
-	ansiName  = "\x1b[33m"
-	ansiDM    = "\x1b[35m"
-	ansiSys   = "\x1b[32m"
-)
+func (a *App) StartCLI() displaySink {
+	return newCLIDisplay(shouldUseColor(a.Cfg.NoColor))
+}
 
 type cliDisplay struct {
 	color bool
@@ -82,6 +78,14 @@ func (c *cliDisplay) ShowNotification(n notificationPayload) {
 	}
 	fmt.Println(line)
 }
+
+const (
+	ansiReset = "\x1b[0m"
+	ansiTime  = "\x1b[36m"
+	ansiName  = "\x1b[33m"
+	ansiDM    = "\x1b[35m"
+	ansiSys   = "\x1b[32m"
+)
 
 func (c *cliDisplay) formatLine(msg message.Message) string {
 	ts := msg.Timestamp.Format("15:04:05")
