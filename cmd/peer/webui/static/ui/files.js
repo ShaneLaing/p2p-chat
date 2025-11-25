@@ -46,16 +46,25 @@ async function bootstrapTransfers() {
 
 function enrichTransfer(entry) {
   const { auth } = getState();
+  const key = entry.share_key;
+  const direction = entry.uploader === auth.username ? 'uploads' : 'downloads';
+  const tokenized = `/api/files/${encodeURIComponent(entry.id)}?username=${encodeURIComponent(auth.username)}&token=${encodeURIComponent(
+    auth.token
+  )}`;
+  const shared = key
+    ? `/api/files/${encodeURIComponent(entry.id)}?key=${encodeURIComponent(key)}`
+    : tokenized;
   return {
     ...entry,
-    status: entry.status || 'complete',
-    direction: entry.uploader === auth.username ? 'uploads' : 'downloads',
-    downloadUrl: `/api/files/${encodeURIComponent(entry.id)}?username=${encodeURIComponent(auth.username)}&token=${encodeURIComponent(auth.token)}`,
-    progress: entry.status === 'complete' ? 100 : entry.progress || 0,
+    mime: entry.mime,
+    status: entry.status || 'available',
+    direction,
+    downloadUrl: shared,
+    progress: entry.status === 'complete' ? 100 : direction === 'uploads' ? 100 : entry.progress || 0,
   };
 }
 
-export function uploadFile(file) {
+export function uploadFile(file, { target } = {}) {
   if (!file) return;
   const { auth } = getState();
   const tempId = `local-${Date.now()}`;
@@ -99,6 +108,9 @@ export function uploadFile(file) {
 
   const form = new FormData();
   form.append('file', file);
+  if (target) {
+    form.append('target', target);
+  }
   xhr.send(form);
 }
 

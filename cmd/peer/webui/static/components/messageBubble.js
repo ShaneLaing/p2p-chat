@@ -36,18 +36,42 @@ export function createMessageBubble(message, currentUser) {
     const attachments = document.createElement('div');
     attachments.className = 'attachments';
     message.attachments.forEach((attachment) => {
-      const chip = document.createElement('button');
-      chip.type = 'button';
+      const item = document.createElement('div');
+      item.className = 'attachment-item';
+      const downloadUrl = buildDownloadURL(attachment);
+      if (attachment.mime && attachment.mime.startsWith('image/') && attachment.url) {
+        const img = document.createElement('img');
+        img.src = attachment.url;
+        img.alt = attachment.name || 'Image';
+        img.className = 'attachment-preview';
+        img.loading = 'lazy';
+        img.addEventListener('click', () => window.open(attachment.url, '_blank'));
+        item.appendChild(img);
+      }
+      const chip = document.createElement('a');
       chip.className = 'attachment-chip';
       chip.textContent = attachment.name || 'Attachment';
-      chip.addEventListener('click', () => {
-        if (attachment.url) {
-          window.open(attachment.url, '_blank');
-        }
-      });
-      attachments.appendChild(chip);
+      if (downloadUrl) {
+        chip.href = downloadUrl;
+        chip.target = '_blank';
+        chip.rel = 'noopener noreferrer';
+        chip.setAttribute('download', attachment.name || 'download');
+      } else if (attachment.url) {
+        chip.href = attachment.url;
+        chip.target = '_blank';
+        chip.rel = 'noopener noreferrer';
+      }
+      item.appendChild(chip);
+      attachments.appendChild(item);
     });
     bubble.appendChild(attachments);
   }
   return bubble;
+}
+
+function buildDownloadURL(attachment) {
+  if (!attachment || !attachment.url) return '';
+  const url = new URL(attachment.url, window.location.origin);
+  url.searchParams.set('download', '1');
+  return url.toString();
 }

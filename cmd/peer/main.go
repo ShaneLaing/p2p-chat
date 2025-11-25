@@ -30,6 +30,7 @@ const (
 	msgTypeAck       = "ack"
 	msgTypePeerSync  = "peer_sync"
 	msgTypeHandshake = "handshake"
+	msgTypeFile      = "file"
 
 	defaultHistoryDBPath = "p2p-chat-history.db"
 	defaultFilesDirPath  = "p2p-files"
@@ -172,7 +173,10 @@ func main() {
 			}
 			return nil
 		}
-		wb, err := newWebBridge(*webAddr, history, func(line string) { processLine(app, line) }, setter, files)
+		share := func(record fileRecord, target string) error {
+			return shareFile(app, record, target)
+		}
+		wb, err := newWebBridge(*webAddr, history, func(line string) { processLine(app, line) }, setter, files, share)
 		if err != nil {
 			log.Fatalf("web ui: %v", err)
 		}
@@ -266,6 +270,18 @@ func handleCommand(app *appContext, line string) {
 			return
 		}
 		sendDirectMessage(app, target, content)
+	case "/file":
+		if len(parts) < 2 {
+			app.sink.ShowSystem("usage: /file <path> [target]")
+			return
+		}
+		target := ""
+		if len(parts) >= 3 {
+			target = parts[2]
+		}
+		if err := sendFileFromPath(app, parts[1], target); err != nil {
+			app.sink.ShowSystem(fmt.Sprintf("file send failed: %v", err))
+		}
 	case "/nick":
 		if len(parts) < 2 {
 			app.sink.ShowSystem("usage: /nick <name>")
@@ -299,7 +315,7 @@ func handleCommand(app *appContext, line string) {
 		app.sink.ShowSystem("bye")
 		os.Exit(0)
 	default:
-		app.sink.ShowSystem("commands: /peers /history /save /load /msg /nick /stats /block /unblock /blocked /quit")
+		app.sink.ShowSystem("commands: /peers /history /save /load /msg /file /nick /stats /block /unblock /blocked /quit")
 	}
 }
 

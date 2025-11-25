@@ -213,6 +213,22 @@ func sendDirectMessage(app *appContext, target, content string) {
 	app.persistExternal(msg, recipient)
 }
 
+func sendFileFromPath(app *appContext, path, target string) error {
+	if app.files == nil || app.web == nil {
+		return fmt.Errorf("file sharing requires --web")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	record, err := app.files.Save(filepath.Base(path), app.identity.Get(), file)
+	if err != nil {
+		return err
+	}
+	return shareFile(app, record, target)
+}
+
 func chooseName(target, resolved string) string {
 	if resolved != "" {
 		return resolved
