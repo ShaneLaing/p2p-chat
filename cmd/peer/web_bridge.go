@@ -1,4 +1,4 @@
-package peer
+package main
 
 import (
 	"context"
@@ -15,31 +15,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
-
 	"p2p-chat/internal/authutil"
 	"p2p-chat/internal/message"
+
+	"github.com/gorilla/websocket"
 )
 
 //go:embed webui/static
 var webFS embed.FS
-
-func (a *App) StartWebUI() displaySink {
-	setter := func(user, token string) error {
-		if a.Identity.SetAuth(user, token) {
-			a.sink.ShowSystem(fmt.Sprintf("logged in as %s", user))
-			a.broadcastHandshake()
-		}
-		return nil
-	}
-	wb, err := newWebBridge(a.Cfg.WebAddr, a.History, func(line string) { a.processLine(line) }, setter, a.Files)
-	if err != nil {
-		log.Fatalf("web ui: %v", err)
-	}
-	a.web = wb
-	go wb.Run(a.ctx)
-	return wb
-}
 
 type webBridge struct {
 	addr       string
@@ -320,6 +303,8 @@ func (wb *webBridge) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	// Each SSE subscriber gets a buffered channel so a slow browser cannot block
+	// notifications destined for other clients.
 	ch := make(chan webEvent, 8)
 	wb.addSSEClient(ch)
 	defer wb.removeSSEClient(ch)
@@ -440,7 +425,8 @@ func (wb *webBridge) UpdatePeers(peers []peerPresence) {
 }
 
 func (wb *webBridge) ShowNotification(n notificationPayload) {
-	wb.sendEvent(webEvent{Kind: "notification", Notification: n})
+	evt := webEvent{Kind: "notification", Notification: n}
+	wb.sendEvent(evt)
 }
 
 type webEvent struct {

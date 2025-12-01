@@ -1,10 +1,10 @@
-package peer
+package main
 
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
+	"sync"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -12,22 +12,13 @@ import (
 	"p2p-chat/internal/message"
 )
 
-func (a *App) StartTUI() displaySink {
-	td := newTUIDisplay(func(line string) { a.processLine(line) })
-	go func() {
-		if err := td.Run(a.ctx); err != nil {
-			log.Printf("tui error: %v", err)
-		}
-	}()
-	return td
-}
-
 type tuiDisplay struct {
 	app      *tview.Application
 	messages *tview.TextView
 	input    *tview.InputField
 	peers    *tview.List
 	send     func(string)
+	once     sync.Once
 }
 
 func newTUIDisplay(send func(string)) *tuiDisplay {
@@ -73,14 +64,16 @@ func newTUIDisplay(send func(string)) *tuiDisplay {
 }
 
 func (t *tuiDisplay) Run(ctx context.Context) error {
+	var err error
 	done := make(chan struct{})
 	go func() {
 		<-ctx.Done()
-		t.app.Stop()
-		close(done)
+		t.once.Do(func() {
+			t.app.Stop()
+		})
 	}()
-	err := t.app.Run()
-	<-done
+	err = t.app.Run()
+	close(done)
 	return err
 }
 
