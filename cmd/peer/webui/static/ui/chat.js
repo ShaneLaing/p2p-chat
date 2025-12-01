@@ -122,8 +122,10 @@ function dispatchMessage({ text, target }) {
 
 function handleFileUpload(file) {
   if (!file) return;
+  const targetField = document.getElementById('target');
+  const target = targetField?.value.trim();
   appendMessage({ type: 'system', content: `Uploading ${file.name} (${file.size} bytes)` });
-  uploadFile(file);
+  uploadFile(file, { target });
 }
 
 function toggleEmojiPanel(textarea, panel) {

@@ -31,6 +31,7 @@ type webBridge struct {
 	history    *historyBuffer
 	submit     func(string)
 	files      *fileStore
+	share      func(fileRecord, string) error
 	clientsMu  sync.Mutex
 	clients    map[*websocket.Conn]struct{}
 	sseMu      sync.Mutex
@@ -41,7 +42,7 @@ type webBridge struct {
 
 const maxUploadBytes = 25 << 20
 
-func newWebBridge(addr string, history *historyBuffer, submit func(string), onSession func(string, string) error, files *fileStore) (*webBridge, error) {
+func newWebBridge(addr string, history *historyBuffer, submit func(string), onSession func(string, string) error, files *fileStore, share func(fileRecord, string) error) (*webBridge, error) {
 	sub, err := fs.Sub(webFS, "webui/static")
 	if err != nil {
 		return nil, err
@@ -51,6 +52,7 @@ func newWebBridge(addr string, history *historyBuffer, submit func(string), onSe
 		history:    history,
 		submit:     submit,
 		files:      files,
+		share:      share,
 		clients:    make(map[*websocket.Conn]struct{}),
 		sseClients: make(map[chan webEvent]struct{}),
 		staticFS:   http.StripPrefix("/static/", http.FileServer(http.FS(sub))),
@@ -129,10 +131,6 @@ func (wb *webBridge) handleFileDownload(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "file storage disabled", http.StatusServiceUnavailable)
 		return
 	}
-	if _, err := wb.requireAuth(r); err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
-		return
-	}
 	id := strings.TrimPrefix(r.URL.Path, "/api/files/")
 	if id == "" {
 		http.NotFound(w, r)
@@ -144,11 +142,29 @@ func (wb *webBridge) handleFileDownload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	defer file.Close()
+	authorized := false
+	if key := r.URL.Query().Get("key"); key != "" && entry.ShareKey != "" && key == entry.ShareKey {
+		authorized = true
+	}
+	if !authorized {
+		if _, err := wb.requireAuth(r); err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+	}
 	filename := entry.Name
-	w.Header().Set("Content-Type", "application/octet-stream")
+	contentType := entry.Mime
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.FormatInt(entry.Size, 10))
 	w.Header().Set("X-Filename", filename)
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", url.PathEscape(filename)))
+	disposition := "inline"
+	if strings.EqualFold(r.URL.Query().Get("download"), "1") {
+		disposition = "attachment"
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf("%s; filename=\"%s\"", disposition, url.PathEscape(filename)))
 	if _, err := io.Copy(w, file); err != nil {
 		log.Printf("file download %s: %v", id, err)
 	}
@@ -184,6 +200,7 @@ func (wb *webBridge) uploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+	target := strings.TrimSpace(r.FormValue("target"))
 	record, err := wb.files.Save(header.Filename, username, file)
 	if err != nil {
 		http.Error(w, "upload failed", http.StatusInternalServerError)
@@ -191,6 +208,11 @@ func (wb *webBridge) uploadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	wb.writeJSON(w, http.StatusCreated, record)
 	wb.broadcastFile(record)
+	if wb.share != nil {
+		if err := wb.share(record, target); err != nil {
+			log.Printf("share file broadcast: %v", err)
+		}
+	}
 	wb.sendEvent(webEvent{Kind: "notification", Notification: notificationPayload{
 		ID:        record.ID,
 		From:      username,

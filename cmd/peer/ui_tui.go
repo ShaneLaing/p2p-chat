@@ -82,8 +82,22 @@ func (t *tuiDisplay) ShowMessage(msg message.Message) {
 	label := ""
 	if msg.Type == msgTypeDM {
 		label = " [DM]"
+	} else if msg.Type == msgTypeFile {
+		label = " [FILE]"
 	}
-	content := fmt.Sprintf("[yellow][%s][-] [lightgreen]%s%s[-]: %s\n", ts, msg.From, label, msg.Content)
+	content := fmt.Sprintf("[yellow][%s][-] [lightgreen]%s%s[-]: %s", ts, msg.From, label, msg.Content)
+	if len(msg.Attachments) > 0 {
+		names := make([]string, 0, len(msg.Attachments))
+		for _, att := range msg.Attachments {
+			if att.Name != "" {
+				names = append(names, att.Name)
+			} else {
+				names = append(names, att.ID)
+			}
+		}
+		content += fmt.Sprintf(" [orange](files: %s)[-]", strings.Join(names, ", "))
+	}
+	content += "\n"
 	t.app.QueueUpdateDraw(func() {
 		fmt.Fprint(t.messages, content)
 	})

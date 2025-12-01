@@ -1,9 +1,11 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -23,6 +25,8 @@ type fileRecord struct {
 	Name      string    `json:"name"`
 	Size      int64     `json:"size"`
 	Uploader  string    `json:"uploader"`
+	Mime      string    `json:"mime,omitempty"`
+	ShareKey  string    `json:"share_key,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -86,12 +90,15 @@ func (s *fileStore) Save(originalName, uploader string, src io.Reader) (fileReco
 	if err != nil {
 		return fileRecord{}, err
 	}
+	mime := detectMime(path)
 	entry := fileEntry{
 		fileRecord: fileRecord{
 			ID:        id,
 			Name:      cleaned,
 			Size:      size,
 			Uploader:  uploader,
+			Mime:      mime,
+			ShareKey:  newShareKey(),
 			CreatedAt: time.Now().UTC(),
 		},
 		Path: path,
@@ -191,4 +198,23 @@ func sanitizeFileName(name string) string {
 		return ""
 	}
 	return cleaned
+}
+
+func newShareKey() string {
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%x", b)
+}
+
+func detectMime(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	buf := make([]byte, 512)
+	n, _ := f.Read(buf)
+	return http.DetectContentType(buf[:n])
 }

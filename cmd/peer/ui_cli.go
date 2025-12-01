@@ -89,14 +89,25 @@ func (c *cliDisplay) formatLine(msg message.Message) string {
 	if msg.Type == msgTypeDM {
 		label = " (dm)"
 	}
+	if msg.Type == msgTypeFile {
+		label = " (file)"
+	}
 	if c.color {
 		nameColor := ansiName
 		if msg.Type == msgTypeDM {
 			nameColor = ansiDM
 		}
-		return fmt.Sprintf("%s[%s]%s %s%s%s%s: %s", ansiTime, ts, ansiReset, nameColor, msg.From, label, ansiReset, msg.Content)
+		line := fmt.Sprintf("%s[%s]%s %s%s%s%s: %s", ansiTime, ts, ansiReset, nameColor, msg.From, label, ansiReset, msg.Content)
+		if extras := formatAttachments(msg); extras != "" {
+			line += " " + extras
+		}
+		return line
 	}
-	return fmt.Sprintf("[%s] %s%s: %s", ts, msg.From, label, msg.Content)
+	line := fmt.Sprintf("[%s] %s%s: %s", ts, msg.From, label, msg.Content)
+	if extras := formatAttachments(msg); extras != "" {
+		line += " " + extras
+	}
+	return line
 }
 
 func shouldUseColor(disable bool) bool {
@@ -113,4 +124,19 @@ func shouldUseColor(disable bool) bool {
 		return false
 	}
 	return true
+}
+
+func formatAttachments(msg message.Message) string {
+	if len(msg.Attachments) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(msg.Attachments))
+	for _, att := range msg.Attachments {
+		if att.Name != "" {
+			names = append(names, att.Name)
+		} else {
+			names = append(names, att.ID)
+		}
+	}
+	return fmt.Sprintf("[files: %s]", strings.Join(names, ", "))
 }

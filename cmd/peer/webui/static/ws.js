@@ -31,6 +31,7 @@ function handleEvent(evt) {
     switch (payload.kind) {
       case 'message':
         appendMessage(payload.message);
+        ingestAttachments(payload.message);
         break;
       case 'system':
         appendMessage({ type: 'system', content: payload.text, timestamp: new Date().toISOString() });
@@ -50,10 +51,16 @@ function handleEvent(evt) {
       case 'file':
         if (payload.file) {
           const { auth } = getState();
+          const key = payload.file.share_key;
+          const url = key
+            ? `/api/files/${encodeURIComponent(payload.file.id)}?key=${encodeURIComponent(key)}`
+            : `/api/files/${encodeURIComponent(payload.file.id)}?username=${encodeURIComponent(auth.username)}&token=${encodeURIComponent(
+                auth.token
+              )}`;
           upsertTransfer({
             ...payload.file,
             direction: payload.file.uploader === auth.username ? 'uploads' : 'downloads',
-            downloadUrl: `/api/files/${encodeURIComponent(payload.file.id)}?username=${encodeURIComponent(auth.username)}&token=${encodeURIComponent(auth.token)}`,
+            downloadUrl: url,
             status: 'complete',
             progress: 100,
           });
@@ -65,6 +72,34 @@ function handleEvent(evt) {
   } catch (err) {
     console.error('ws decode failed', err);
   }
+}
+
+function ingestAttachments(message) {
+  if (!message || !Array.isArray(message.attachments) || message.attachments.length === 0) return;
+  const { auth } = getState();
+  message.attachments.forEach((att) => {
+    const downloadUrl =
+      att.url ||
+      `/api/files/${encodeURIComponent(att.id)}?username=${encodeURIComponent(auth.username)}&token=${encodeURIComponent(auth.token)}`;
+    upsertTransfer({
+      id: att.id,
+      name: att.name || 'attachment',
+      size: att.size,
+      uploader: message.from,
+      mime: att.mime,
+      direction: message.from === auth.username ? 'uploads' : 'downloads',
+      downloadUrl,
+      status: 'available',
+      progress: 0,
+    });
+    if (message.from && message.from !== auth.username) {
+      pushNotification('system', {
+        title: 'New file',
+        text: `${message.from} shared ${att.name || 'a file'}`,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
 }
 
 export function sendLine(text) {
