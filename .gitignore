@@ -1,0 +1,6 @@
+# 忽略所有 .db 檔案
+*.db
+
+# 也可以明確忽略 p2p-data 目錄下所有內容
+p2p-data/
+p2p-files/
