@@ -11,3 +11,13 @@ type Metrics struct {
 	StatelessModeLogins  atomic.Uint64
 	PersistentModeLogins atomic.Uint64
 }
+
+// MetricsSnapshot is a copy-friendly view for logging/testing.
+type MetricsSnapshot struct {
+	AuthRequests         uint64
+	LoginAttempts        uint64
+	RegisterAttempts     uint64
+	HealthChecks         uint64
+	StatelessModeLogins  uint64
+	PersistentModeLogins uint64
+}

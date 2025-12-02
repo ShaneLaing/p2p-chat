@@ -23,8 +23,18 @@ func New(db *sql.DB) *Server {
 }
 
 // MetricsSnapshot exposes the current counters (useful for tests/logging).
-func (s *Server) MetricsSnapshot() Metrics {
-	return *s.metrics
+func (s *Server) MetricsSnapshot() MetricsSnapshot {
+	if s.metrics == nil {
+		return MetricsSnapshot{}
+	}
+	return MetricsSnapshot{
+		AuthRequests:         s.metrics.AuthRequests.Load(),
+		LoginAttempts:        s.metrics.LoginAttempts.Load(),
+		RegisterAttempts:     s.metrics.RegisterAttempts.Load(),
+		HealthChecks:         s.metrics.HealthChecks.Load(),
+		StatelessModeLogins:  s.metrics.StatelessModeLogins.Load(),
+		PersistentModeLogins: s.metrics.PersistentModeLogins.Load(),
+	}
 }
 
 // Router wires up chi routes, middleware, and handlers ready for http.ListenAndServe.

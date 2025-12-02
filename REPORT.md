@@ -116,6 +116,14 @@ flowchart TD
 - 授權：WebSocket 連線會將 JWT 附在 query string；`processIncoming` 在處理 `msgTypeHandshake` 時必須成功驗證 `AuthToken` 才會更新 peers。
 - 檔案下載：`files_store` 將 `ShareKey` 加入 URL、web 端會自動加上 JWT query；若 `authutil.ValidateToken` 失敗即拒絕請求。
 
+#### Lexicographical Key 設計（AI 協作成果）
+
+- **動機**：AI 在 r2/r3 協作階段建議把歷史訊息用「時間戳 + MsgID」的複合鍵存成 BoltDB key，我據此在 `history_store.go` 採用 `fmt.Sprintf("%020d-%s", msg.Timestamp.UnixNano(), msg.MsgID)`。
+- **排序穩定性**：`%020d` 以 20 位前導零格式化納秒時間戳，使 BoltDB 的字典序與實際時間完全一致；沒有固定長度時，`9-foo` 會被錯排在 `10-bar` 之後。
+- **唯一性**：`MsgID` 附在尾端，即便兩則訊息恰好同一納秒（在高併發環境並非不可能），鍵仍保持唯一，避免覆寫。
+- **Recent() 效能**：由於最新訊息鍵值最大，`Recent` 可直接 `cursor.Last()` 取得最新記錄，再 `cursor.Prev()` 逆序掃描直到 `limit`，毋需載入全部資料再排序，讓 CLI `/history` 及 Web UI 初始載入都更即時。
+- **AI 協作亮點**：我原先僅打算用 MsgID 作鍵；AI 指出 B+ 樹會依字典序排序，並提醒以固定長度時間戳做前綴，這讓資料結構既穩定又可高效回溯，後續也沿用這個 pattern 在 files bucket 中引用。
+
 ## 3. Testing & Quality Assurance
 
 ### Part 1 – Go `_test.go` 覆蓋面
