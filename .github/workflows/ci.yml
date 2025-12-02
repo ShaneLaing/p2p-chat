@@ -31,6 +31,8 @@ jobs:
       - name: Node unit tests
         run: |
           cd internal/peer/webui/static
-          npm install
+          if [ -f package.json ]; then
+            npm install
+          fi
           node ui/__tests__/theme.test.mjs
           node ui/__tests__/settings.test.mjs
