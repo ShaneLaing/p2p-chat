@@ -16,6 +16,8 @@ const (
 var (
 	dialBackoff     = 5 * time.Second
 	dialJitterRange = 2 * time.Second
+	randSrc         = rand.New(rand.NewSource(time.Now().UnixNano()))
+	randMu          sync.Mutex
 )
 
 type peerConnector interface {
@@ -81,30 +83,54 @@ func (d *dialScheduler) Run(ctx context.Context) {
 		case <-d.quit:
 			return
 		case addr := <-d.queue:
-			d.tryDial(addr)
+			d.tryDial(ctx, addr)
 		}
 	}
 }
 
-func (d *dialScheduler) tryDial(addr string) {
+func (d *dialScheduler) tryDial(ctx context.Context, addr string) {
 	if err := d.cm.ConnectToPeer(addr); err != nil {
 		log.Printf("dial %s failed: %v", addr, err)
-		d.scheduleRetry(addr)
+		d.scheduleRetry(ctx, addr)
 		return
 	}
 	d.mu.Lock()
-	delete(d.desired, addr)
+	_, stillDesired := d.desired[addr]
+	if stillDesired {
+		d.desired[addr] = time.Now()
+	}
 	d.mu.Unlock()
+	if stillDesired {
+		d.scheduleRetry(ctx, addr)
+	}
 }
 
-func (d *dialScheduler) scheduleRetry(addr string) {
+func (d *dialScheduler) scheduleRetry(ctx context.Context, addr string) {
 	go func() {
 		var jitter time.Duration
 		if dialJitterRange > 0 {
-			jitter = time.Duration(rand.Int63n(int64(dialJitterRange)))
+			randMu.Lock()
+			jitter = time.Duration(randSrc.Int63n(int64(dialJitterRange)))
+			randMu.Unlock()
 		}
-		time.Sleep(dialBackoff + jitter)
-		d.enqueue(addr)
+		delay := dialBackoff + jitter
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return
+		case <-d.quit:
+			return
+		case <-timer.C:
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-d.quit:
+			return
+		default:
+			d.enqueue(addr)
+		}
 	}()
 }
 

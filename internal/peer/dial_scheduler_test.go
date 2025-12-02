@@ -51,15 +51,22 @@ func TestDialSchedulerAddIgnoresInvalid(t *testing.T) {
 	}
 }
 
-func TestDialSchedulerRunRemovesAfterSuccess(t *testing.T) {
+func TestDialSchedulerRunKeepsDesiredAfterSuccess(t *testing.T) {
 	connector := newMockConnector()
 	scheduler := newDialScheduler(connector, "self")
+	originalBackoff, originalJitter := dialBackoff, dialJitterRange
+	dialBackoff, dialJitterRange = 5*time.Millisecond, 0
+	defer func() { dialBackoff, dialJitterRange = originalBackoff, originalJitter }()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go scheduler.Run(ctx)
 	scheduler.Add("peer2")
-	waitFor(t, func() bool { return connector.Calls("peer2") == 1 })
-	waitFor(t, func() bool { return len(scheduler.Desired()) == 0 })
+	waitFor(t, func() bool { return connector.Calls("peer2") >= 1 })
+	waitFor(t, func() bool {
+		desired := scheduler.Desired()
+		return len(desired) == 1 && desired[0] == "peer2"
+	})
+	waitFor(t, func() bool { return connector.Calls("peer2") >= 2 })
 	scheduler.Close()
 }
 
