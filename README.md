@@ -163,6 +163,17 @@ Manual verification (each item maps to the commit 5 blueprint requirements):
 - Allow browser notifications once, then trigger a mention to verify both the drawer stack and the OS-level toast fire while the service worker caches the shell.
 - Inspect the side nav, top bar, chat panel, and notifications drawer to ensure divider borders remain visible in both light and dark themes.
 
+### Benchmark Snapshot
+
+`go test ./internal/peer -bench . -benchtime=2s` on an Intel(R) Core(TM) Ultra 7 155H (Windows) produced:
+
+| Benchmark | Ops | ns/op | Notes |
+|-----------|-----|-------|-------|
+| `BenchmarkMsgCacheSeen-22` | 642,669 | 3,462 ns | Covers TTL dedupe map lock/evict path |
+| `BenchmarkHistoryBufferAdd-22` | 5,435,833 | 427 ns | Measures ring buffer append & trimming |
+
+Use these as baselines when tuning cache TTLs or history sizes.
+
 ## Helpful Tips
 
 - Use distinct `--web-addr` ports per peer so each serves an isolated browser UI.

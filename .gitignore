@@ -1,7 +1,7 @@
-# 忽略所有 .db 檔案
+
 *.db
-*.gocache
-# 也可以明確忽略 p2p-data 目錄下所有內容
+
+.gocache/
 p2p-data/
 p2p-files/
 cmd/peer/p2p-chat-history.db

@@ -6,19 +6,24 @@ import (
 	"math/rand"
 	"sync"
 	"time"
-
-	"p2p-chat/internal/network"
 )
 
 // dialScheduler manages dialing peers with retries and backoff.
 const (
-	dialQueueSize   = 128
+	dialQueueSize = 128
+)
+
+var (
 	dialBackoff     = 5 * time.Second
 	dialJitterRange = 2 * time.Second
 )
 
+type peerConnector interface {
+	ConnectToPeer(string) error
+}
+
 type dialScheduler struct {
-	cm       *network.ConnManager
+	cm       peerConnector
 	selfAddr string
 
 	mu      sync.RWMutex
@@ -28,7 +33,7 @@ type dialScheduler struct {
 	quit  chan struct{}
 }
 
-func newDialScheduler(cm *network.ConnManager, self string) *dialScheduler {
+func newDialScheduler(cm peerConnector, self string) *dialScheduler {
 	return &dialScheduler{
 		cm:       cm,
 		selfAddr: self,
@@ -94,7 +99,10 @@ func (d *dialScheduler) tryDial(addr string) {
 
 func (d *dialScheduler) scheduleRetry(addr string) {
 	go func() {
-		jitter := time.Duration(rand.Int63n(int64(dialJitterRange)))
+		var jitter time.Duration
+		if dialJitterRange > 0 {
+			jitter = time.Duration(rand.Int63n(int64(dialJitterRange)))
+		}
 		time.Sleep(dialBackoff + jitter)
 		d.enqueue(addr)
 	}()

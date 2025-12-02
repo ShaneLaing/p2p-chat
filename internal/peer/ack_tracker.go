@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"p2p-chat/internal/message"
-	"p2p-chat/internal/network"
 )
 
 const (
@@ -21,14 +20,18 @@ type pendingAck struct {
 	lastSend time.Time
 }
 
+type broadcaster interface {
+	Broadcast(message.Message, string)
+}
+
 type ackTracker struct {
-	cm      *network.ConnManager
+	cm      broadcaster
 	mu      sync.Mutex
 	pending map[string]*pendingAck
 	quit    chan struct{}
 }
 
-func newAckTracker(cm *network.ConnManager) *ackTracker {
+func newAckTracker(cm broadcaster) *ackTracker {
 	tracker := &ackTracker{
 		cm:      cm,
 		pending: make(map[string]*pendingAck),
