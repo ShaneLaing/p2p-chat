@@ -194,7 +194,10 @@ func (s *fileStore) Open(id string) (*fileEntry, *os.File, error) {
 func sanitizeFileName(name string) string {
 	cleaned := filepath.Base(name)
 	cleaned = strings.TrimSpace(cleaned)
-	if cleaned == "." || cleaned == string(filepath.Separator) {
+	if cleaned == "" || cleaned == "." {
+		return ""
+	}
+	if cleaned == "/" || cleaned == "\\" || cleaned == string(filepath.Separator) {
 		return ""
 	}
 	return cleaned
