@@ -10,15 +10,16 @@ import (
 )
 
 var (
-	secretOnce sync.Once
+	secretOnce sync.Once // Ensure that the key is only read and initialized once.
 	secretKey  []byte
 )
 
+// getSecret retrieves the secret key from environment variable or defaults for development.
 func getSecret() []byte {
 	secretOnce.Do(func() {
 		key := os.Getenv("P2P_AUTH_SECRET")
 		if key == "" {
-			key = "dev-secret-change-me"
+			key = "dev-secret-change-me" // using a default for development
 		}
 		secretKey = []byte(key)
 	})
@@ -31,7 +32,7 @@ func IssueToken(username string) (string, error) {
 		"username": username,
 		"exp":      time.Now().Add(24 * time.Hour).Unix(),
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims) // Create token with claims
 	return token.SignedString(getSecret())
 }
 
@@ -40,6 +41,7 @@ func ValidateToken(tokenStr string) (string, error) {
 	if tokenStr == "" {
 		return "", errors.New("empty token")
 	}
+	// check if token method is the HMAC and validate signature
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")

@@ -1,0 +1,304 @@
+* {
+  box-sizing: border-box;
+  font-family: "Segoe UI", "Noto Sans", sans-serif;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.login-body {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at top, #1d4ed8, #0f172a 50%);
+}
+
+.onboarding {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.login-box {
+  background: rgba(15, 23, 42, 0.9);
+  padding: 2rem;
+  border-radius: 16px;
+  width: 320px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.login-box.secondary {
+  opacity: 0.9;
+}
+
+.login-box select {
+  padding: 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #1f2937;
+  background: #111827;
+  color: #e2e8f0;
+}
+
+.brand {
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0;
+  color: #94a3b8;
+}
+
+.login-box input {
+  padding: 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #1f2937;
+  background: #111827;
+  color: #e2e8f0;
+}
+
+.login-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+button {
+  border: none;
+  border-radius: 8px;
+  padding: 0.7rem 1.2rem;
+  cursor: pointer;
+  font-weight: 600;
+  background: #2563eb;
+  color: white;
+}
+
+button.ghost {
+  background: transparent;
+  border: 1px solid #2563eb;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Inline warning that keeps the login form usable in stateless mode. */
+.warning-message {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 10px;
+  background: rgba(14, 116, 144, 0.25);
+  color: #67e8f9;
+  font-size: 0.9rem;
+}
+
+.warning-message.hidden {
+  display: none;
+}
+
+.login-box.recovery {
+  border: 1px dashed #f87171;
+  background: rgba(20, 20, 20, 0.5);
+}
+
+.login-box.recovery .subtitle {
+  color: #fca5a5;
+}
+
+.login-box button.full {
+  width: 100%;
+}
+
+.retry-link {
+  color: #93c5fd;
+  text-decoration: underline;
+  text-align: center;
+}
+
+.status {
+  min-height: 1.2rem;
+  color: #fca5a5;
+}
+
+.chat-body {
+  background: #020617;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 100vh;
+  height: 100vh;
+}
+
+.sidebar {
+  background: #0b1120;
+  padding: 1.5rem;
+  border-right: 1px solid #1e293b;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.me-card,
+.status-card {
+  background: #111b2e;
+  padding: 1rem;
+  border-radius: 12px;
+}
+
+.me-card .label {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+#user-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+#user-list li {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid #1f2937;
+}
+
+.chat-pane {
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+  gap: 1rem;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.chat-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.command-bar {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.command-bar button {
+  flex: none;
+}
+
+.dm-target input {
+  width: 100%;
+  padding: 0.6rem;
+  border-radius: 8px;
+  border: 1px solid #1f2937;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.message-stream {
+  flex: 1;
+  background: #050b16;
+  border-radius: 16px;
+  padding: 1.2rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.bubble {
+  max-width: 70%;
+  padding: 0.8rem;
+  border-radius: 14px;
+  background: #1f2937;
+}
+
+.bubble.mine {
+  margin-left: auto;
+  background: #2563eb;
+}
+
+.bubble.theirs {
+  margin-right: auto;
+}
+
+.bubble.dm {
+  border: 1px solid #c084fc;
+}
+
+.bubble.system {
+  margin: 0 auto;
+  max-width: 60%;
+  background: transparent;
+  color: #34d399;
+  border: 1px dashed #34d399;
+}
+
+.bubble .meta {
+  font-size: 0.75rem;
+  color: #cbd5f5;
+  margin-bottom: 0.2rem;
+}
+
+.bubble.mine .meta {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.bubble .body {
+  font-size: 0.95rem;
+  white-space: pre-wrap;
+}
+
+#composer {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-end;
+}
+
+#composer textarea {
+  flex: 1;
+  resize: none;
+  border-radius: 12px;
+  border: 1px solid #1f2937;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 0.8rem;
+}
+
+#composer button {
+  min-width: 100px;
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .chat-body {
+    overflow: auto;
+  }
+  .chat-pane {
+    height: auto;
+  }
+}

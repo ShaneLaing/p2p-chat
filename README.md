@@ -6,48 +6,87 @@ Fully implementing stages 1–36 of the spec, this project delivers a secure mes
 - `cmd/peer`: the actual encrypted P2P node with CLI, TUI, and embedded web UI bridges.
 - `cmd/auth`: Postgres-backed auth + history service that issues JWTs to both the CLI and the browser.
 
-## Architecture Overview
-- **Core mesh (req 1–12):** peers register with the bootstrap server, open TCP listeners, and flood JSON chat payloads with deduplication, retry/ack tracking, and AES-256-GCM when a shared `--secret` is present.
-- **Enhanced UX (req 13–24):** nicknames, history, `/msg` DMs, persistence to BoltDB, `/block` lists, metrics, optional rich-text TUI UI, and the embedded web bridge that mirrors events over WebSockets.
-- **Auth & Web (req 25–36):** dedicated REST auth server (chi + Postgres + JWT), login/registration screen, full chat web UI with presence, DM targeting, history fetch, and server-side handshake validation so only authenticated users appear on the mesh.
-
 ## Prerequisites
+
 - Go 1.21+
 - (Optional) A running Postgres instance. Provide its connection string via `DATABASE_URL` (for example, `postgres://user:pass@localhost:5432/p2p_chat`). When it is unset, the auth service still boots but responds with `503 Service Unavailable` for register/login/history endpoints.
 - Modern browser for the web UI.
 
 ## Quick Start
+
 1. **Bootstrap database (first run only):** create the database described above. The auth server auto-migrates `users` and `messages` tables.
 2. **Run the auth service:**
-	Set `DATABASE_URL` in the same PowerShell session if you want persistence:
-	```powershell
-	$env:DATABASE_URL = "postgres://user:pass@localhost:5432/p2p_chat"  # session only
-	setx DATABASE_URL "postgres://user:pass@localhost:5432/p2p_chat"     # persist for future shells
-	```
-	Then start the server (it will log a warning and serve without persistence if you skip the variable):
-	```powershell
-	cd d:\NYCU_subjects\114-1\GO\Project\p2p-chat
-	go run ./cmd/auth
-	```
-3. **Run the bootstrap server:**
-	```powershell
-	cd d:\NYCU_subjects\114-1\GO\Project\p2p-chat
-	go run ./cmd/bootstrap --addr=:8000
-	```
-4. **Run two peers (CLI mode shown; add `--web` to serve the browser UI):**
-	```powershell
-	# Alice
-	go run ./cmd/peer --port=9001 --nick=Alice --secret=topsecret --web --web-addr 127.0.0.1:8081
+   Set `DATABASE_URL` in the same PowerShell session if you want persistence:
 
-	# Bob
-	go run ./cmd/peer --port=9002 --nick=Bob --secret=topsecret --web --web-addr 127.0.0.1:8082
-	```
-	Each peer automatically stores its history and file metadata under `p2p-data/<host>-<port>/` (for example, `p2p-data/127-0-0-1-9001/`). Use `--data-dir <path>` if you want to place those per-peer folders somewhere else, or provide explicit `--history-db/--files-db/--files-dir` paths.
+   ```powershell
+   $env:DATABASE_URL = "postgres://user:pass@localhost:5432/p2p_chat"  # session only
+   setx DATABASE_URL "postgres://user:pass@localhost:5432/p2p_chat"     # persist for future shells
+   ```
+
+   Then start the server (it will log a warning and serve without persistence if you skip the variable):
+
+   ```powershell
+   cd d:\NYCU_subjects\114-1\GO\Project\p2p-chat
+   go run ./cmd/auth
+   ```
+3. **Run the bootstrap server:**
+
+   ```powershell
+   cd d:\NYCU_subjects\114-1\GO\Project\p2p-chat
+   go run ./cmd/bootstrap --addr=:8000
+   ```
+4. **Run two peers (CLI mode shown; add `--web` to serve the browser UI):**
+
+   ```powershell
+   # Alice
+   go run ./cmd/peer --port=9001 --nick=Alice --secret=topsecret --web --web-addr 127.0.0.1:8081
+
+   # Bob
+   go run ./cmd/peer --port=9002 --nick=Bob --secret=topsecret --web --web-addr 127.0.0.1:8082
+   ```
+
+   Each peer automatically stores its history and file metadata under `p2p-data/<host>-<port>/` (for example, `p2p-data/127-0-0-1-9001/`). Use `--data-dir <path>` if you want to place those per-peer folders somewhere else, or provide explicit `--history-db/--files-db/--files-dir` paths.
 5. **Open the browser UI:** visit `http://127.0.0.1:8081`, register/login via the auth server, then chat in the modern UI while the peer relays messages on the mesh.
 
 The peer automatically persists your outbound messages to `cmd/auth` via `/messages`, whereas the web client also requests `/history` to prefill recent conversations.
 
+## Workspace Test Recipes (Mesh Home vs Lab Cluster)
+
+Two presets ship with the login UI (`internal/peer/webui/static/login.js`).
+
+- **Mesh Home (localhost sandbox)**
+  1. Keep the defaults from the “Quick Start” section: `go run ./cmd/auth --addr :8089`, `go run ./cmd/bootstrap --addr :8000`, and peers bound to `127.0.0.1` ports (for example `--web-addr 127.0.0.1:8081`).
+  2. On the login page select **Mesh Home**; the preset points to `http://127.0.0.1:8089` for auth and `http://127.0.0.1:8000` for bootstrap, so no extra configuration is needed.
+  3. Use this mode when all components run on the same workstation; no firewall changes are required.
+
+- **Lab Cluster (Wi-Fi / intranet testing)**
+  1. Start the services on your LAN IP (example uses `172.18.105.183`):
+     ```powershell
+     $env:DATABASE_URL = "postgres://user:pass@localhost:5432/p2p_chat"
+     go run ./cmd/auth --addr 172.18.105.183:8180
+     go run ./cmd/bootstrap --addr :8000
+     ```
+  2. Launch peers with network-facing addresses so others can reach them:
+     ```powershell
+     # Alice
+     go run ./cmd/peer --port 9001 --nick Alice --secret topsecret ^
+       --bootstrap http://172.18.105.183:8000 ^
+       --auth-api http://172.18.105.183:8180 ^
+       --web --web-addr 172.18.105.183:8081
+
+     # Bob
+     go run ./cmd/peer --port 9002 --nick Bob --secret topsecret ^
+       --bootstrap http://172.18.105.183:8000 ^
+       --auth-api http://172.18.105.183:8180 ^
+       --web --web-addr 172.18.105.183:8082
+     ```
+  3. In the login UI choose **Lab** (or update `WORKSPACES.lab` to your actual IP) so browsers probe `/healthz` on `172.18.105.183:8180`.
+  4. Share the URLs `http://172.18.105.183:8081/chat`, `http://172.18.105.183:8082/chat`, etc., with classmates; ensure Windows Firewall allows inbound TCP on 8081/8082/9001/9002/8180 and 8000.
+
+These two recipes keep the “mesh home” loopback tests isolated while providing a reproducible guide for multi-machine lab demos.
+
 ## Peer Flags (excerpt)
+
 - `--bootstrap` – URL of the bootstrap registry (default `http://127.0.0.1:8000`).
 - `--port` / `--listen` – inbound TCP port; `--listen` accepts `host:port`.
 - `--secret` – shared password enabling AES-GCM encryption.
@@ -61,6 +100,7 @@ The peer automatically persists your outbound messages to `cmd/auth` via `/messa
 - `--data-dir` – base directory used to auto-create per-peer folders (only applied when leaving the other file flags at their defaults).
 
 ## CLI / TUI Commands
+
 - `/peers` – show live connections plus scheduler targets.
 - `/history` – dump the in-memory buffer (size set by `--history`).
 - `/save <path>` / `/load [N]` – write or replay persisted BoltDB history.
@@ -71,6 +111,7 @@ The peer automatically persists your outbound messages to `cmd/auth` via `/messa
 - `/quit` – exit gracefully.
 
 ## Web Experience
+
 - **Onboarding:** the multi-step `index.html` flow gathers credentials and workspace (bootstrap/auth presets) before redirecting to `/chat`.
 - **Layout shell:** `app.html` + `app.css` define the `AppLayout` (SideNav, TopBar, panels, notifications drawer). Each region is documented inline, and the SPA is split into ES modules (`state.js`, `ws.js`, `ui/*`, `components/*`).
 - **Chat panel:** `ui/chat.js` renders threaded messages via `components/messageBubble.js`, exposes the DM field, emoji grid, drag/drop zone, and the explicit **Send** button powered by the central store.
@@ -82,24 +123,27 @@ The peer automatically persists your outbound messages to `cmd/auth` via `/messa
 - **DB-less awareness:** the login page now probes `/healthz`, shows a warning banner during stateless mode, and offers a recovery panel that can jump back to the last healthy workspace without blocking the login controls.
 
 ## Auth API
+
 The auth server (chi + pgx) exposes:
 
-| Method | Path       | Description                                  |
-| ------ | ---------- | -------------------------------------------- |
-| POST   | `/register`| Store a bcrypt-hashed user (unique username) |
-| POST   | `/login`   | Verify password, return JWT + username       |
-| POST   | `/messages`| Authenticated peers persist outbound content |
-| GET    | `/history` | Authenticated fetch of recent chat/dm events |
-| GET    | `/healthz` | Returns 200 when Postgres is reachable, 503 otherwise |
+| Method | Path          | Description                                           |
+| ------ | ------------- | ----------------------------------------------------- |
+| POST   | `/register` | Store a bcrypt-hashed user (unique username)          |
+| POST   | `/login`    | Verify password, return JWT + username                |
+| POST   | `/messages` | Authenticated peers persist outbound content          |
+| GET    | `/history`  | Authenticated fetch of recent chat/dm events          |
+| GET    | `/healthz`  | Returns 200 when Postgres is reachable, 503 otherwise |
 
 JWTs are signed via `internal/authutil` and validated both at the WebSocket boundary and inside peer handshakes so impersonation attempts are rejected.
 
 ## Development Notes
+
 - `go build ./...` and `go test ./...` to validate Go changes; run the lightweight UI checks with `node cmd/peer/webui/static/ui/__tests__/theme.test.mjs` and `node cmd/peer/webui/static/ui/__tests__/settings.test.mjs`.
 - Run `gofmt ./...` before committing.
 - The repo intentionally stays dependency-light: chi, pgx, gorilla/websocket, and `golang-jwt` cover all external needs; the browser UI is written in plain ES modules (no bundler required).
 
 ## Build & QA Checklist
+
 Run these steps before publishing a change to ensure Go, UI, and browser features stay aligned:
 
 ```powershell
@@ -111,6 +155,7 @@ node cmd/peer/webui/static/ui/__tests__/settings.test.mjs
 ```
 
 Manual verification (each item maps to the commit 5 blueprint requirements):
+
 - Toggle the light/dark theme from both the sidebar and header, confirm the palette updates instantly, and refresh to ensure persistence via `state.js`.
 - Send a chat using the **Send** button and ensure the WebSocket echo plus BoltDB history update; verify the composer textarea stays aligned with the button at various viewport widths.
 - Open Settings to flip notification/device toggles and observe toasts/snackbars acknowledging the change.
@@ -119,6 +164,7 @@ Manual verification (each item maps to the commit 5 blueprint requirements):
 - Inspect the side nav, top bar, chat panel, and notifications drawer to ensure divider borders remain visible in both light and dark themes.
 
 ## Helpful Tips
+
 - Use distinct `--web-addr` ports per peer so each serves an isolated browser UI.
 - Point multiple peers at the same auth server to share login state and cloud history.
 - When running CLI-only peers, obtain a token from the auth server (or reuse one from localStorage) and pass `--username/--token` to keep the mesh identity consistent with the authenticated one.
@@ -128,34 +174,38 @@ Manual verification (each item maps to the commit 5 blueprint requirements):
 ## Auth Troubleshooting
 
 **Log expectations**
+
 - Every REST call now emits a JSON log line: `{ "route": "/login", "method": "POST", "status": 503, "duration_ms": 4, "stateless_mode": true, "client": "127.0.0.1:51555", "timestamp": "2025-11-18T02:31:11.941Z" }`.
 - Successful logins in persistent mode look like: `{ "route": "/login", "status": 200, "stateless_mode": false, ... }`.
 - `stateless_mode: true` indicates `DATABASE_URL` is missing/invalid when the request arrived.
 
 **Metrics (in-memory counters)**
+
 - Maintained counters: `auth_requests_total`, `login_attempts_total`, `register_attempts_total`, `healthz_checks_total`, `stateless_mode_logins_total`, `persistent_mode_logins_total`.
 - Example snapshot right after light testing: `auth_requests_total=42`, `login_attempts_total=6`, `register_attempts_total=2`, `healthz_checks_total=9`, `stateless_mode_logins_total=3`, `persistent_mode_logins_total=3`.
 - Counters reset whenever the auth process restarts because they live in-memory alongside the server.
 
 **Useful curl/PowerShell commands**
+
 - Mesh workspace health:
-	```bash
-	curl -s http://127.0.0.1:8089/healthz | jq
-	```
+  ```bash
+  curl -s http://127.0.0.1:8089/healthz | jq
+  ```
 - Lab workspace (useful before pressing **Switch to last known working endpoint**):
-	```bash
-	curl -s http://127.0.0.1:8090/healthz | jq
-	```
+  ```bash
+  curl -s http://127.0.0.1:8090/healthz | jq
+  ```
 - PowerShell equivalent plus stateless flag extraction:
-	```powershell
-	Invoke-WebRequest http://127.0.0.1:8089/healthz | ConvertFrom-Json | Select-Object status,dbEnabled
-	```
+  ```powershell
+  Invoke-WebRequest http://127.0.0.1:8089/healthz | ConvertFrom-Json | Select-Object status,dbEnabled
+  ```
 - Verify stateless vs persistent quickly:
-	```powershell
-	Invoke-WebRequest http://127.0.0.1:8089/healthz | ConvertFrom-Json | ForEach-Object { if (-not $_.dbEnabled) { "Stateless mode" } else { "Persistent mode" } }
-	```
+  ```powershell
+  Invoke-WebRequest http://127.0.0.1:8089/healthz | ConvertFrom-Json | ForEach-Object { if (-not $_.dbEnabled) { "Stateless mode" } else { "Persistent mode" } }
+  ```
 
 **Common failures and fixes**
+
 - **DB disabled intentionally:** login still works but `/register`/`/login` respond `503`. The UI shows the warning banner yet the buttons remain usable; persistence resumes once `DATABASE_URL` is set and the server restarts.
 - **Wrong workspace endpoint:** the recovery panel appears after ~300 ms, offering a one-click switch to the last healthy workspace; verify with the curl commands above before switching.
 - **Healthz mismatch vs UI:** if `/healthz` returns `200` but the banner remains, clear the browser cache/localStorage or click “Retry this workspace” to re-run the probe.

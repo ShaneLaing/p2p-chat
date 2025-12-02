@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"flag"
 	"log"
 	"net/http"
 	"os"
@@ -13,15 +14,16 @@ import (
 )
 
 func main() {
+	addr := flag.String("addr", ":8089", "HTTP listen address")
+	flag.Parse()
 	logger := httplog.NewLogger("auth", httplog.Options{JSON: false})
 	db := configureDatabase()
 	if db != nil {
 		defer db.Close()
 	}
 	server := authserver.New(db)
-	addr := ":8089"
-	log.Printf("Auth server running at %s", addr)
-	if err := http.ListenAndServe(addr, httplog.RequestLogger(logger)(server.Router())); err != nil {
+	log.Printf("Auth server running at %s", *addr)
+	if err := http.ListenAndServe(*addr, httplog.RequestLogger(logger)(server.Router())); err != nil {
 		log.Fatalf("auth server stopped: %v", err)
 	}
 }
