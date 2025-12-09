@@ -1,4 +1,4 @@
-package peer
+package ui
 
 import (
 	"fmt"
@@ -19,22 +19,23 @@ const (
 	ansiSys   = "\x1b[32m"
 )
 
-type cliDisplay struct {
+// CLIDisplay renders chat events to stdout.
+type CLIDisplay struct {
 	color bool
 	mu    sync.Mutex
 }
 
-func newCLIDisplay(color bool) *cliDisplay {
-	return &cliDisplay{color: color}
+func NewCLIDisplay(color bool) *CLIDisplay {
+	return &CLIDisplay{color: color}
 }
 
-func (c *cliDisplay) ShowMessage(msg message.Message) {
+func (c *CLIDisplay) ShowMessage(msg message.Message) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	fmt.Println(c.formatLine(msg))
 }
 
-func (c *cliDisplay) ShowSystem(text string) {
+func (c *CLIDisplay) ShowSystem(text string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	ts := time.Now().Format("15:04:05")
@@ -45,7 +46,7 @@ func (c *cliDisplay) ShowSystem(text string) {
 	fmt.Printf("[%s] SYSTEM: %s\n", ts, text)
 }
 
-func (c *cliDisplay) UpdatePeers(peers []peerPresence) {
+func (c *CLIDisplay) UpdatePeers(peers []Presence) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	names := make([]string, 0, len(peers))
@@ -67,7 +68,7 @@ func (c *cliDisplay) UpdatePeers(peers []peerPresence) {
 	fmt.Printf("[peers] %s\n", msg)
 }
 
-func (c *cliDisplay) ShowNotification(n notificationPayload) {
+func (c *CLIDisplay) ShowNotification(n Notification) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	ts := n.Timestamp.Format("15:04:05")
@@ -83,18 +84,18 @@ func (c *cliDisplay) ShowNotification(n notificationPayload) {
 	fmt.Println(line)
 }
 
-func (c *cliDisplay) formatLine(msg message.Message) string {
+func (c *CLIDisplay) formatLine(msg message.Message) string {
 	ts := msg.Timestamp.Format("15:04:05")
 	label := ""
-	if msg.Type == msgTypeDM {
+	switch msg.Type {
+	case "dm":
 		label = " (dm)"
-	}
-	if msg.Type == msgTypeFile {
+	case "file":
 		label = " (file)"
 	}
 	if c.color {
 		nameColor := ansiName
-		if msg.Type == msgTypeDM {
+		if msg.Type == "dm" {
 			nameColor = ansiDM
 		}
 		line := fmt.Sprintf("%s[%s]%s %s%s%s%s: %s", ansiTime, ts, ansiReset, nameColor, msg.From, label, ansiReset, msg.Content)
@@ -110,7 +111,8 @@ func (c *cliDisplay) formatLine(msg message.Message) string {
 	return line
 }
 
-func shouldUseColor(disable bool) bool {
+// ShouldUseColor determines if ANSI coloring should be enabled for CLI output.
+func ShouldUseColor(disable bool) bool {
 	if disable {
 		return false
 	}

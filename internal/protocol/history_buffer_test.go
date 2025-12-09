@@ -1,4 +1,4 @@
-package peer
+package protocol
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 )
 
 func TestHistoryBufferTrimsOldEntries(t *testing.T) {
-	buf := newHistory(3)
+	buf := NewHistoryBuffer(3)
 	for i := 0; i < 5; i++ {
 		buf.Add(message.Message{MsgID: string(rune('a' + i))})
 	}

@@ -1,24 +1,27 @@
-package peer
+package protocol
 
 import (
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"p2p-chat/internal/ui"
 )
 
 const presenceGrace = 20 * time.Second
 
-type blockList struct {
+// BlockList prevents unwanted peers from appearing locally.
+type BlockList struct {
 	mu      sync.RWMutex
 	blocked map[string]struct{}
 }
 
-func newBlockList() *blockList {
-	return &blockList{blocked: make(map[string]struct{})}
+func NewBlockList() *BlockList {
+	return &BlockList{blocked: make(map[string]struct{})}
 }
 
-func (b *blockList) Add(token string) {
+func (b *BlockList) Add(token string) {
 	if token == "" {
 		return
 	}
@@ -27,13 +30,13 @@ func (b *blockList) Add(token string) {
 	b.blocked[token] = struct{}{}
 }
 
-func (b *blockList) Remove(token string) {
+func (b *BlockList) Remove(token string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	delete(b.blocked, token)
 }
 
-func (b *blockList) Blocks(name, addr string) bool {
+func (b *BlockList) Blocks(name, addr string) bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	if _, ok := b.blocked[name]; ok {
@@ -45,7 +48,7 @@ func (b *blockList) Blocks(name, addr string) bool {
 	return false
 }
 
-func (b *blockList) List() []string {
+func (b *BlockList) List() []string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	out := make([]string, 0, len(b.blocked))
@@ -62,20 +65,21 @@ type peerEntry struct {
 	LastSeen time.Time
 }
 
-type peerDirectory struct {
+// PeerDirectory tracks known peers and their presence info.
+type PeerDirectory struct {
 	mu     sync.RWMutex
 	byName map[string]*peerEntry
 	byAddr map[string]*peerEntry
 }
 
-func newPeerDirectory() *peerDirectory {
-	return &peerDirectory{
+func NewPeerDirectory() *PeerDirectory {
+	return &PeerDirectory{
 		byName: make(map[string]*peerEntry),
 		byAddr: make(map[string]*peerEntry),
 	}
 }
 
-func (p *peerDirectory) Record(name, addr string) {
+func (p *PeerDirectory) Record(name, addr string) {
 	if addr == "" {
 		return
 	}
@@ -98,7 +102,7 @@ func (p *peerDirectory) Record(name, addr string) {
 	p.byName[key] = entry
 }
 
-func (p *peerDirectory) MarkActive(addrs []string) {
+func (p *PeerDirectory) MarkActive(addrs []string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	now := time.Now()
@@ -115,7 +119,7 @@ func (p *peerDirectory) MarkActive(addrs []string) {
 	}
 }
 
-func (p *peerDirectory) Resolve(token string) (addr string, name string, ok bool) {
+func (p *PeerDirectory) Resolve(token string) (addr string, name string, ok bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	if entry, ok := p.byAddr[token]; ok {
@@ -127,12 +131,12 @@ func (p *peerDirectory) Resolve(token string) (addr string, name string, ok bool
 	return "", "", false
 }
 
-func (p *peerDirectory) Snapshot() []peerPresence {
+func (p *PeerDirectory) Snapshot() []ui.Presence {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	list := make([]peerPresence, 0, len(p.byAddr))
+	list := make([]ui.Presence, 0, len(p.byAddr))
 	for _, entry := range p.byAddr {
-		list = append(list, peerPresence{
+		list = append(list, ui.Presence{
 			Name:   entry.Name,
 			Addr:   entry.Addr,
 			Online: entry.Online,

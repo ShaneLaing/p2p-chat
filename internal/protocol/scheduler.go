@@ -1,4 +1,4 @@
-package peer
+package protocol
 
 import (
 	"context"
@@ -8,10 +8,7 @@ import (
 	"time"
 )
 
-// dialScheduler manages dialing peers with retries and backoff.
-const (
-	dialQueueSize = 128
-)
+const dialQueueSize = 128
 
 var (
 	dialBackoff     = 5 * time.Second
@@ -24,7 +21,8 @@ type peerConnector interface {
 	ConnectToPeer(string) error
 }
 
-type dialScheduler struct {
+// DialScheduler manages peer dialing with retries and jitter.
+type DialScheduler struct {
 	cm       peerConnector
 	selfAddr string
 
@@ -35,8 +33,8 @@ type dialScheduler struct {
 	quit  chan struct{}
 }
 
-func newDialScheduler(cm peerConnector, self string) *dialScheduler {
-	return &dialScheduler{
+func NewDialScheduler(cm peerConnector, self string) *DialScheduler {
+	return &DialScheduler{
 		cm:       cm,
 		selfAddr: self,
 		desired:  make(map[string]time.Time),
@@ -45,7 +43,7 @@ func newDialScheduler(cm peerConnector, self string) *dialScheduler {
 	}
 }
 
-func (d *dialScheduler) Add(addr string) {
+func (d *DialScheduler) Add(addr string) {
 	if addr == "" || addr == d.selfAddr {
 		return
 	}
@@ -57,7 +55,7 @@ func (d *dialScheduler) Add(addr string) {
 	d.mu.Unlock()
 }
 
-func (d *dialScheduler) Desired() []string {
+func (d *DialScheduler) Desired() []string {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	list := make([]string, 0, len(d.desired))
@@ -67,7 +65,7 @@ func (d *dialScheduler) Desired() []string {
 	return list
 }
 
-func (d *dialScheduler) enqueue(addr string) {
+func (d *DialScheduler) enqueue(addr string) {
 	select {
 	case d.queue <- addr:
 	default:
@@ -75,7 +73,7 @@ func (d *dialScheduler) enqueue(addr string) {
 	}
 }
 
-func (d *dialScheduler) Run(ctx context.Context) {
+func (d *DialScheduler) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -88,7 +86,7 @@ func (d *dialScheduler) Run(ctx context.Context) {
 	}
 }
 
-func (d *dialScheduler) tryDial(ctx context.Context, addr string) {
+func (d *DialScheduler) tryDial(ctx context.Context, addr string) {
 	if err := d.cm.ConnectToPeer(addr); err != nil {
 		log.Printf("dial %s failed: %v", addr, err)
 		d.scheduleRetry(ctx, addr)
@@ -105,7 +103,7 @@ func (d *dialScheduler) tryDial(ctx context.Context, addr string) {
 	}
 }
 
-func (d *dialScheduler) scheduleRetry(ctx context.Context, addr string) {
+func (d *DialScheduler) scheduleRetry(ctx context.Context, addr string) {
 	go func() {
 		var jitter time.Duration
 		if dialJitterRange > 0 {
@@ -134,6 +132,6 @@ func (d *dialScheduler) scheduleRetry(ctx context.Context, addr string) {
 	}()
 }
 
-func (d *dialScheduler) Close() {
+func (d *DialScheduler) Close() {
 	close(d.quit)
 }

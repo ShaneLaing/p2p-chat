@@ -1,4 +1,4 @@
-package peer
+package protocol
 
 import (
 	"sync"
@@ -29,7 +29,7 @@ func (s *stubBroadcaster) Messages() []message.Message {
 
 func TestAckTrackerRebroadcastExpired(t *testing.T) {
 	stub := &stubBroadcaster{}
-	tracker := &ackTracker{cm: stub, pending: make(map[string]*pendingAck)}
+	tracker := &AckTracker{cm: stub, pending: make(map[string]*pendingAck)}
 
 	msg := message.Message{MsgID: "m1", Timestamp: time.Now()}
 	tracker.Track(msg)
@@ -53,7 +53,7 @@ func TestAckTrackerRebroadcastExpired(t *testing.T) {
 
 func TestAckTrackerDropsAfterMaxAttempts(t *testing.T) {
 	stub := &stubBroadcaster{}
-	tracker := &ackTracker{cm: stub, pending: make(map[string]*pendingAck)}
+	tracker := &AckTracker{cm: stub, pending: make(map[string]*pendingAck)}
 
 	msg := message.Message{MsgID: "m2", Timestamp: time.Now()}
 	tracker.Track(msg)

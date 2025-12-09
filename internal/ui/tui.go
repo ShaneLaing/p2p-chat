@@ -1,4 +1,4 @@
-package peer
+package ui
 
 import (
 	"context"
@@ -12,7 +12,8 @@ import (
 	"p2p-chat/internal/message"
 )
 
-type tuiDisplay struct {
+// TUIDisplay renders chat data using tview.
+type TUIDisplay struct {
 	app      *tview.Application
 	messages *tview.TextView
 	input    *tview.InputField
@@ -21,7 +22,7 @@ type tuiDisplay struct {
 	once     sync.Once
 }
 
-func newTUIDisplay(send func(string)) *tuiDisplay {
+func NewTUIDisplay(send func(string)) *TUIDisplay {
 	messages := tview.NewTextView().
 		SetDynamicColors(true).
 		SetRegions(false).
@@ -35,7 +36,7 @@ func newTUIDisplay(send func(string)) *tuiDisplay {
 		SetLabel("> ").
 		SetFieldTextColor(tcell.ColorWhite)
 
-	td := &tuiDisplay{
+	td := &TUIDisplay{
 		app:      tview.NewApplication(),
 		messages: messages,
 		input:    input,
@@ -63,9 +64,8 @@ func newTUIDisplay(send func(string)) *tuiDisplay {
 	return td
 }
 
-func (t *tuiDisplay) Run(ctx context.Context) error {
+func (t *TUIDisplay) Run(ctx context.Context) error {
 	var err error
-	done := make(chan struct{})
 	go func() {
 		<-ctx.Done()
 		t.once.Do(func() {
@@ -73,17 +73,16 @@ func (t *tuiDisplay) Run(ctx context.Context) error {
 		})
 	}()
 	err = t.app.Run()
-	close(done)
 	return err
 }
 
-func (t *tuiDisplay) ShowMessage(msg message.Message) {
+func (t *TUIDisplay) ShowMessage(msg message.Message) {
 	ts := msg.Timestamp.Format("15:04:05")
 	label := ""
 	switch msg.Type {
-	case msgTypeDM:
+	case "dm":
 		label = " [DM]"
-	case msgTypeFile:
+	case "file":
 		label = " [FILE]"
 	}
 	content := fmt.Sprintf("[yellow][%s][-] [lightgreen]%s%s[-]: %s", ts, msg.From, label, msg.Content)
@@ -104,14 +103,14 @@ func (t *tuiDisplay) ShowMessage(msg message.Message) {
 	})
 }
 
-func (t *tuiDisplay) ShowSystem(text string) {
+func (t *TUIDisplay) ShowSystem(text string) {
 	content := fmt.Sprintf("[green]>>> %s[-]\n", text)
 	t.app.QueueUpdateDraw(func() {
 		fmt.Fprint(t.messages, content)
 	})
 }
 
-func (t *tuiDisplay) UpdatePeers(peers []peerPresence) {
+func (t *TUIDisplay) UpdatePeers(peers []Presence) {
 	t.app.QueueUpdateDraw(func() {
 		t.peers.Clear()
 		for _, p := range peers {
@@ -128,7 +127,7 @@ func (t *tuiDisplay) UpdatePeers(peers []peerPresence) {
 	})
 }
 
-func (t *tuiDisplay) ShowNotification(n notificationPayload) {
+func (t *TUIDisplay) ShowNotification(n Notification) {
 	content := fmt.Sprintf("[orange]** %s [-] %s\n", strings.ToUpper(n.Level), n.Text)
 	t.app.QueueUpdateDraw(func() {
 		fmt.Fprint(t.messages, content)

@@ -1,9 +1,9 @@
-package peer
+package protocol
 
 import "testing"
 
 func TestIdentitySetDisplay(t *testing.T) {
-	id := newIdentity("", "fallback")
+	id := NewIdentity("", "fallback")
 	if got := id.Get(); got != "fallback" {
 		t.Fatalf("expected fallback name, got %s", got)
 	}
@@ -19,7 +19,7 @@ func TestIdentitySetDisplay(t *testing.T) {
 }
 
 func TestIdentitySetAuth(t *testing.T) {
-	id := newIdentity("bob", "bob")
+	id := NewIdentity("bob", "bob")
 	if !id.SetAuth("alice", "token") {
 		t.Fatalf("expected auth change to be reported")
 	}

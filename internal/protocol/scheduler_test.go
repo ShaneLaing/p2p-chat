@@ -1,4 +1,4 @@
-package peer
+package protocol
 
 import (
 	"context"
@@ -40,7 +40,7 @@ func (m *mockConnector) Calls(addr string) int {
 
 func TestDialSchedulerAddIgnoresInvalid(t *testing.T) {
 	connector := newMockConnector()
-	scheduler := newDialScheduler(connector, "self")
+	scheduler := NewDialScheduler(connector, "self")
 	scheduler.Add("")
 	scheduler.Add("self")
 	scheduler.Add("peer1")
@@ -53,7 +53,7 @@ func TestDialSchedulerAddIgnoresInvalid(t *testing.T) {
 
 func TestDialSchedulerRunKeepsDesiredAfterSuccess(t *testing.T) {
 	connector := newMockConnector()
-	scheduler := newDialScheduler(connector, "self")
+	scheduler := NewDialScheduler(connector, "self")
 	originalBackoff, originalJitter := dialBackoff, dialJitterRange
 	dialBackoff, dialJitterRange = 5*time.Millisecond, 0
 	defer func() { dialBackoff, dialJitterRange = originalBackoff, originalJitter }()
@@ -73,7 +73,7 @@ func TestDialSchedulerRunKeepsDesiredAfterSuccess(t *testing.T) {
 func TestDialSchedulerRetriesAfterFailure(t *testing.T) {
 	connector := newMockConnector()
 	connector.failures["peer3"] = 1
-	scheduler := newDialScheduler(connector, "self")
+	scheduler := NewDialScheduler(connector, "self")
 	originalBackoff, originalJitter := dialBackoff, dialJitterRange
 	dialBackoff, dialJitterRange = 5*time.Millisecond, 0
 	defer func() { dialBackoff, dialJitterRange = originalBackoff, originalJitter }()

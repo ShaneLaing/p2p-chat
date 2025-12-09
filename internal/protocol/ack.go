@@ -1,4 +1,4 @@
-package peer
+package protocol
 
 import (
 	"log"
@@ -14,25 +14,26 @@ const (
 	ackMaxAttempts   = 3
 )
 
+type broadcaster interface {
+	Broadcast(message.Message, string)
+}
+
 type pendingAck struct {
 	msg      message.Message
 	attempts int
 	lastSend time.Time
 }
 
-type broadcaster interface {
-	Broadcast(message.Message, string)
-}
-
-type ackTracker struct {
+// AckTracker retries messages that have not been acknowledged yet.
+type AckTracker struct {
 	cm      broadcaster
 	mu      sync.Mutex
 	pending map[string]*pendingAck
 	quit    chan struct{}
 }
 
-func newAckTracker(cm broadcaster) *ackTracker {
-	tracker := &ackTracker{
+func NewAckTracker(cm broadcaster) *AckTracker {
+	tracker := &AckTracker{
 		cm:      cm,
 		pending: make(map[string]*pendingAck),
 		quit:    make(chan struct{}),
@@ -41,7 +42,7 @@ func newAckTracker(cm broadcaster) *ackTracker {
 	return tracker
 }
 
-func (a *ackTracker) Track(msg message.Message) {
+func (a *AckTracker) Track(msg message.Message) {
 	if msg.MsgID == "" {
 		return
 	}
@@ -50,7 +51,7 @@ func (a *ackTracker) Track(msg message.Message) {
 	a.pending[msg.MsgID] = &pendingAck{msg: msg, attempts: 1, lastSend: time.Now()}
 }
 
-func (a *ackTracker) Confirm(msgID string) {
+func (a *AckTracker) Confirm(msgID string) {
 	if msgID == "" {
 		return
 	}
@@ -59,7 +60,7 @@ func (a *ackTracker) Confirm(msgID string) {
 	a.mu.Unlock()
 }
 
-func (a *ackTracker) loop() {
+func (a *AckTracker) loop() {
 	ticker := time.NewTicker(ackCheckInterval)
 	defer ticker.Stop()
 	for {
@@ -72,7 +73,7 @@ func (a *ackTracker) loop() {
 	}
 }
 
-func (a *ackTracker) rebroadcastExpired() {
+func (a *AckTracker) rebroadcastExpired() {
 	now := time.Now()
 	var resend []message.Message
 
@@ -97,6 +98,6 @@ func (a *ackTracker) rebroadcastExpired() {
 	}
 }
 
-func (a *ackTracker) Stop() {
+func (a *AckTracker) Stop() {
 	close(a.quit)
 }

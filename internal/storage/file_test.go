@@ -1,4 +1,4 @@
-package peer
+package storage
 
 import (
 	"io"
@@ -9,11 +9,11 @@ import (
 
 func TestFileStoreSaveAndRetrieve(t *testing.T) {
 	base := t.TempDir()
-	store, err := openFileStore(filepath.Join(base, "files.db"), filepath.Join(base, "files"))
+	store, err := OpenFileStore(filepath.Join(base, "files.db"), filepath.Join(base, "files"))
 	if err != nil {
-		t.Fatalf("openFileStore error: %v", err)
+		t.Fatalf("OpenFileStore error: %v", err)
 	}
-	defer store.Close()
+	t.Cleanup(func() { _ = store.Close() })
 
 	rec, err := store.Save("../sample.txt", "alice", strings.NewReader("hello world"))
 	if err != nil {
@@ -41,7 +41,7 @@ func TestFileStoreSaveAndRetrieve(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open error: %v", err)
 	}
-	defer file.Close()
+	t.Cleanup(func() { _ = file.Close() })
 	data, err := io.ReadAll(file)
 	if err != nil {
 		t.Fatalf("read error: %v", err)

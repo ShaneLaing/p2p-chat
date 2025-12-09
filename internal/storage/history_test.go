@@ -1,4 +1,4 @@
-package peer
+package storage
 
 import (
 	"path/filepath"
@@ -10,9 +10,9 @@ import (
 
 func TestHistoryStoreAppendAndRecent(t *testing.T) {
 	tempDir := t.TempDir()
-	store, err := openHistoryStore(filepath.Join(tempDir, "history.db"))
+	store, err := OpenHistoryStore(filepath.Join(tempDir, "history.db"))
 	if err != nil {
-		t.Fatalf("openHistoryStore: %v", err)
+		t.Fatalf("OpenHistoryStore: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -42,7 +42,7 @@ func TestHistoryStoreAppendAndRecent(t *testing.T) {
 }
 
 func TestHistoryStoreRecentLimitZero(t *testing.T) {
-	store := &historyStore{}
+	store := &HistoryStore{}
 	msgs, err := store.Recent(0)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)

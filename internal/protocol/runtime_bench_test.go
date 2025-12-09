@@ -1,4 +1,4 @@
-package peer
+package protocol
 
 import (
 	"testing"
@@ -8,27 +8,26 @@ import (
 )
 
 func BenchmarkMsgCacheSeen(b *testing.B) {
-	cache := newMsgCache(time.Minute)
+	cache := NewMsgCache(time.Minute)
 	ids := make([]string, 1024)
 	for i := range ids {
-		ids[i] = newMsgID()
+		ids[i] = NewMsgID()
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if cache.Seen(ids[i%len(ids)]) {
-			cache.mu.Lock()
-			delete(cache.seen, ids[i%len(ids)])
-			cache.mu.Unlock()
+		idx := i % len(ids)
+		if cache.Seen(ids[idx]) {
+			ids[idx] = NewMsgID()
 		}
 	}
 }
 
 func BenchmarkHistoryBufferAdd(b *testing.B) {
-	buf := newHistory(512)
+	buf := NewHistoryBuffer(512)
 	msg := message.Message{}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		msg.MsgID = newMsgID()
+		msg.MsgID = NewMsgID()
 		buf.Add(msg)
 	}
 }

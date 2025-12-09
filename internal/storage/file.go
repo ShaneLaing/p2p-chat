@@ -1,4 +1,4 @@
-package peer
+package storage
 
 import (
 	"crypto/rand"
@@ -15,12 +15,10 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-// filesBucket stores `fileEntry` blobs keyed by the stable file ID so lookups
-// for downloads do not require scanning the bucket.
 const filesBucket = "files"
 
-// fileRecord is the public metadata we share with the web UI / API callers.
-type fileRecord struct {
+// FileRecord is exported to UIs so downloads can be surfaced in chat history.
+type FileRecord struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Size      int64     `json:"size"`
@@ -30,18 +28,19 @@ type fileRecord struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// fileEntry persists the on-disk path in Bolt for internal lookups.
+// fileEntry keeps the on-disk path private to the store.
 type fileEntry struct {
-	fileRecord
+	FileRecord
 	Path string `json:"path"`
 }
 
-type fileStore struct {
+// FileStore persists uploads on disk and records their metadata in BoltDB.
+type FileStore struct {
 	db  *bbolt.DB
 	dir string
 }
 
-func openFileStore(dbPath, dir string) (*fileStore, error) {
+func OpenFileStore(dbPath, dir string) (*FileStore, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return nil, err
 	}
@@ -60,39 +59,38 @@ func openFileStore(dbPath, dir string) (*fileStore, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	return &fileStore{db: db, dir: dir}, nil
+	return &FileStore{db: db, dir: dir}, nil
 }
 
-func (s *fileStore) Close() error {
+func (s *FileStore) Close() error {
 	if s == nil || s.db == nil {
 		return nil
 	}
 	return s.db.Close()
 }
 
-// Save writes the uploaded content to disk and stores the metadata.
-func (s *fileStore) Save(originalName, uploader string, src io.Reader) (fileRecord, error) {
+func (s *FileStore) Save(originalName, uploader string, src io.Reader) (FileRecord, error) {
 	if s == nil || s.db == nil {
-		return fileRecord{}, fmt.Errorf("file store not initialized")
+		return FileRecord{}, fmt.Errorf("file store not initialized")
 	}
 	cleaned := sanitizeFileName(originalName)
 	if cleaned == "" {
 		cleaned = "upload.bin"
 	}
-	id := newMsgID()
+	id := newFileID()
 	path := filepath.Join(s.dir, id)
 	dst, err := os.Create(path)
 	if err != nil {
-		return fileRecord{}, err
+		return FileRecord{}, err
 	}
 	defer dst.Close()
 	size, err := io.Copy(dst, src)
 	if err != nil {
-		return fileRecord{}, err
+		return FileRecord{}, err
 	}
 	mime := detectMime(path)
 	entry := fileEntry{
-		fileRecord: fileRecord{
+		FileRecord: FileRecord{
 			ID:        id,
 			Name:      cleaned,
 			Size:      size,
@@ -105,26 +103,26 @@ func (s *fileStore) Save(originalName, uploader string, src io.Reader) (fileReco
 	}
 	data, err := json.Marshal(entry)
 	if err != nil {
-		return fileRecord{}, err
+		return FileRecord{}, err
 	}
 	err = s.db.Update(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket([]byte(filesBucket))
 		return bucket.Put([]byte(entry.ID), data)
 	})
 	if err != nil {
-		return fileRecord{}, err
+		return FileRecord{}, err
 	}
-	return entry.fileRecord, nil
+	return entry.FileRecord, nil
 }
 
-func (s *fileStore) List(limit int) ([]fileRecord, error) {
+func (s *FileStore) List(limit int) ([]FileRecord, error) {
 	if s == nil || s.db == nil {
 		return nil, nil
 	}
 	if limit <= 0 {
 		limit = 50
 	}
-	records := make([]fileRecord, 0, limit)
+	records := make([]FileRecord, 0, limit)
 	err := s.db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket([]byte(filesBucket))
 		if bucket == nil {
@@ -136,7 +134,7 @@ func (s *fileStore) List(limit int) ([]fileRecord, error) {
 			if err := json.Unmarshal(v, &entry); err != nil {
 				continue
 			}
-			records = append(records, entry.fileRecord)
+			records = append(records, entry.FileRecord)
 		}
 		return nil
 	})
@@ -152,7 +150,7 @@ func (s *fileStore) List(limit int) ([]fileRecord, error) {
 	return records, nil
 }
 
-func (s *fileStore) Get(id string) (*fileEntry, error) {
+func (s *FileStore) Get(id string) (*fileEntry, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("file store not initialized")
 	}
@@ -179,7 +177,7 @@ func (s *fileStore) Get(id string) (*fileEntry, error) {
 	return result, nil
 }
 
-func (s *fileStore) Open(id string) (*fileEntry, *os.File, error) {
+func (s *FileStore) Open(id string) (*fileEntry, *os.File, error) {
 	entry, err := s.Get(id)
 	if err != nil {
 		return nil, nil, err
@@ -205,6 +203,14 @@ func sanitizeFileName(name string) string {
 
 func newShareKey() string {
 	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%x", b)
+}
+
+func newFileID() string {
+	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		return fmt.Sprintf("%d", time.Now().UnixNano())
 	}

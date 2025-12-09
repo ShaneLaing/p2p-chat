@@ -1,4 +1,4 @@
-package peer
+package protocol
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 )
 
 func TestBlockListAddRemove(t *testing.T) {
-	bl := newBlockList()
+	bl := NewBlockList()
 	bl.Add("alice")
 	if !bl.Blocks("alice", "") {
 		t.Fatalf("expected alice to be blocked by name")
@@ -26,7 +26,7 @@ func TestBlockListAddRemove(t *testing.T) {
 }
 
 func TestPeerDirectoryRecordAndResolve(t *testing.T) {
-	dir := newPeerDirectory()
+	dir := NewPeerDirectory()
 	dir.Record("Alice", "10.0.0.2:9001")
 	addr, name, ok := dir.Resolve("alice")
 	if !ok || addr != "10.0.0.2:9001" || name != "Alice" {
@@ -39,7 +39,7 @@ func TestPeerDirectoryRecordAndResolve(t *testing.T) {
 }
 
 func TestPeerDirectoryMarkActiveAndSnapshot(t *testing.T) {
-	dir := newPeerDirectory()
+	dir := NewPeerDirectory()
 	dir.Record("Alice", "10.0.0.2:9001")
 	dir.Record("Bob", "10.0.0.3:9001")
 	dir.MarkActive([]string{"10.0.0.2:9001"})

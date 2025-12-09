@@ -1,4 +1,4 @@
-package peer
+package ui
 
 import (
 	"context"
@@ -15,23 +15,31 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
+
 	"p2p-chat/internal/authutil"
 	"p2p-chat/internal/message"
-
-	"github.com/gorilla/websocket"
+	"p2p-chat/internal/storage"
 )
 
 //go:embed webui/static
 var webFS embed.FS
 
-type webBridge struct {
+// HistoryProvider exposes the chat backlog to the web UI without coupling
+// the ui package to a specific runtime implementation.
+type HistoryProvider interface {
+	All() []message.Message
+}
+
+// WebBridge wires the embedded web UI to the runtime via HTTP, WS and SSE.
+type WebBridge struct {
 	addr       string
 	srv        *http.Server
 	upgrader   websocket.Upgrader
-	history    *historyBuffer
+	history    HistoryProvider
 	submit     func(string)
-	files      *fileStore
-	share      func(fileRecord, string) error
+	files      *storage.FileStore
+	share      func(storage.FileRecord, string) error
 	clientsMu  sync.Mutex
 	clients    map[*websocket.Conn]struct{}
 	sseMu      sync.Mutex
@@ -42,12 +50,12 @@ type webBridge struct {
 
 const maxUploadBytes = 25 << 20
 
-func newWebBridge(addr string, history *historyBuffer, submit func(string), onSession func(string, string) error, files *fileStore, share func(fileRecord, string) error) (*webBridge, error) {
+func NewWebBridge(addr string, history HistoryProvider, submit func(string), onSession func(string, string) error, files *storage.FileStore, share func(storage.FileRecord, string) error) (*WebBridge, error) {
 	sub, err := fs.Sub(webFS, "webui/static")
 	if err != nil {
 		return nil, err
 	}
-	wb := &webBridge{
+	wb := &WebBridge{
 		addr:       addr,
 		history:    history,
 		submit:     submit,
@@ -75,7 +83,7 @@ func newWebBridge(addr string, history *historyBuffer, submit func(string), onSe
 	return wb, nil
 }
 
-func (wb *webBridge) Run(ctx context.Context) {
+func (wb *WebBridge) Run(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	go func() {
 		<-ctx.Done()
@@ -88,7 +96,7 @@ func (wb *webBridge) Run(ctx context.Context) {
 	cancel()
 }
 
-func (wb *webBridge) Close() {
+func (wb *WebBridge) Close() {
 	_ = wb.srv.Shutdown(context.Background())
 	wb.clientsMu.Lock()
 	for conn := range wb.clients {
@@ -103,15 +111,20 @@ func (wb *webBridge) Close() {
 	wb.sseMu.Unlock()
 }
 
-func (wb *webBridge) handleIndex(w http.ResponseWriter, r *http.Request) {
+// Addr exposes the bound address so other layers can build public URLs.
+func (wb *WebBridge) Addr() string {
+	return wb.addr
+}
+
+func (wb *WebBridge) handleIndex(w http.ResponseWriter, r *http.Request) {
 	wb.serveHTML(w, "webui/static/index.html")
 }
 
-func (wb *webBridge) handleChat(w http.ResponseWriter, r *http.Request) {
+func (wb *WebBridge) handleChat(w http.ResponseWriter, r *http.Request) {
 	wb.serveHTML(w, "webui/static/app.html")
 }
 
-func (wb *webBridge) handleFiles(w http.ResponseWriter, r *http.Request) {
+func (wb *WebBridge) handleFiles(w http.ResponseWriter, r *http.Request) {
 	if wb.files == nil {
 		http.Error(w, "file storage disabled", http.StatusServiceUnavailable)
 		return
@@ -126,7 +139,7 @@ func (wb *webBridge) handleFiles(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (wb *webBridge) handleFileDownload(w http.ResponseWriter, r *http.Request) {
+func (wb *WebBridge) handleFileDownload(w http.ResponseWriter, r *http.Request) {
 	if wb.files == nil {
 		http.Error(w, "file storage disabled", http.StatusServiceUnavailable)
 		return
@@ -170,7 +183,7 @@ func (wb *webBridge) handleFileDownload(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (wb *webBridge) listFiles(w http.ResponseWriter, r *http.Request) {
+func (wb *WebBridge) listFiles(w http.ResponseWriter, r *http.Request) {
 	if _, err := wb.requireAuth(r); err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
@@ -183,7 +196,7 @@ func (wb *webBridge) listFiles(w http.ResponseWriter, r *http.Request) {
 	wb.writeJSON(w, http.StatusOK, records)
 }
 
-func (wb *webBridge) uploadFile(w http.ResponseWriter, r *http.Request) {
+func (wb *WebBridge) uploadFile(w http.ResponseWriter, r *http.Request) {
 	username, err := wb.requireAuth(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -213,7 +226,7 @@ func (wb *webBridge) uploadFile(w http.ResponseWriter, r *http.Request) {
 			log.Printf("share file broadcast: %v", err)
 		}
 	}
-	wb.sendEvent(webEvent{Kind: "notification", Notification: notificationPayload{
+	wb.sendEvent(webEvent{Kind: "notification", Notification: Notification{
 		ID:        record.ID,
 		From:      username,
 		Level:     "file",
@@ -222,7 +235,7 @@ func (wb *webBridge) uploadFile(w http.ResponseWriter, r *http.Request) {
 	}})
 }
 
-func (wb *webBridge) handlePushSubscribe(w http.ResponseWriter, r *http.Request) {
+func (wb *WebBridge) handlePushSubscribe(w http.ResponseWriter, r *http.Request) {
 	if _, err := wb.requireAuth(r); err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
@@ -231,7 +244,7 @@ func (wb *webBridge) handlePushSubscribe(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (wb *webBridge) requireAuth(r *http.Request) (string, error) {
+func (wb *WebBridge) requireAuth(r *http.Request) (string, error) {
 	if token := r.URL.Query().Get("token"); token != "" {
 		username := r.URL.Query().Get("username")
 		resolved, err := authutil.ValidateToken(token)
@@ -255,7 +268,7 @@ func (wb *webBridge) requireAuth(r *http.Request) (string, error) {
 	return username, nil
 }
 
-func (wb *webBridge) writeJSON(w http.ResponseWriter, status int, payload interface{}) {
+func (wb *WebBridge) writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
@@ -263,11 +276,11 @@ func (wb *webBridge) writeJSON(w http.ResponseWriter, status int, payload interf
 	}
 }
 
-func (wb *webBridge) broadcastFile(record fileRecord) {
+func (wb *WebBridge) broadcastFile(record storage.FileRecord) {
 	wb.sendEvent(webEvent{Kind: "file", File: record})
 }
 
-func (wb *webBridge) serveHTML(w http.ResponseWriter, path string) {
+func (wb *WebBridge) serveHTML(w http.ResponseWriter, path string) {
 	data, err := webFS.ReadFile(path)
 	if err != nil {
 		http.Error(w, "missing assets", http.StatusInternalServerError)
@@ -277,7 +290,7 @@ func (wb *webBridge) serveHTML(w http.ResponseWriter, path string) {
 	_, _ = w.Write(data)
 }
 
-func (wb *webBridge) handleWS(w http.ResponseWriter, r *http.Request) {
+func (wb *WebBridge) handleWS(w http.ResponseWriter, r *http.Request) {
 	username := r.URL.Query().Get("username")
 	token := r.URL.Query().Get("token")
 	if username == "" || token == "" {
@@ -305,7 +318,7 @@ func (wb *webBridge) handleWS(w http.ResponseWriter, r *http.Request) {
 	wb.sendHistory(conn)
 }
 
-func (wb *webBridge) handleSSE(w http.ResponseWriter, r *http.Request) {
+func (wb *WebBridge) handleSSE(w http.ResponseWriter, r *http.Request) {
 	username := r.URL.Query().Get("username")
 	token := r.URL.Query().Get("token")
 	if username == "" || token == "" {
@@ -325,8 +338,6 @@ func (wb *webBridge) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	// Each SSE subscriber gets a buffered channel so a slow browser cannot block
-	// notifications destined for other clients.
 	ch := make(chan webEvent, 8)
 	wb.addSSEClient(ch)
 	defer wb.removeSSEClient(ch)
@@ -348,20 +359,20 @@ func (wb *webBridge) handleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (wb *webBridge) register(conn *websocket.Conn) {
+func (wb *WebBridge) register(conn *websocket.Conn) {
 	wb.clientsMu.Lock()
 	wb.clients[conn] = struct{}{}
 	wb.clientsMu.Unlock()
 }
 
-func (wb *webBridge) unregister(conn *websocket.Conn) {
+func (wb *WebBridge) unregister(conn *websocket.Conn) {
 	wb.clientsMu.Lock()
 	delete(wb.clients, conn)
 	wb.clientsMu.Unlock()
 	_ = conn.Close()
 }
 
-func (wb *webBridge) readLoop(conn *websocket.Conn) {
+func (wb *WebBridge) readLoop(conn *websocket.Conn) {
 	defer wb.unregister(conn)
 	for {
 		_, data, err := conn.ReadMessage()
@@ -376,12 +387,12 @@ func (wb *webBridge) readLoop(conn *websocket.Conn) {
 	}
 }
 
-func (wb *webBridge) sendHistory(conn *websocket.Conn) {
+func (wb *WebBridge) sendHistory(conn *websocket.Conn) {
 	event := webEvent{Kind: "history", History: wb.history.All()}
 	wb.sendEventTo(conn, event)
 }
 
-func (wb *webBridge) sendEvent(evt webEvent) {
+func (wb *WebBridge) sendEvent(evt webEvent) {
 	data, err := json.Marshal(evt)
 	if err != nil {
 		log.Printf("web event encode: %v", err)
@@ -399,7 +410,7 @@ func (wb *webBridge) sendEvent(evt webEvent) {
 	wb.emitSSE(evt)
 }
 
-func (wb *webBridge) sendEventTo(conn *websocket.Conn, evt webEvent) {
+func (wb *WebBridge) sendEventTo(conn *websocket.Conn, evt webEvent) {
 	data, err := json.Marshal(evt)
 	if err != nil {
 		return
@@ -407,20 +418,20 @@ func (wb *webBridge) sendEventTo(conn *websocket.Conn, evt webEvent) {
 	_ = conn.WriteMessage(websocket.TextMessage, data)
 }
 
-func (wb *webBridge) addSSEClient(ch chan webEvent) {
+func (wb *WebBridge) addSSEClient(ch chan webEvent) {
 	wb.sseMu.Lock()
 	wb.sseClients[ch] = struct{}{}
 	wb.sseMu.Unlock()
 }
 
-func (wb *webBridge) removeSSEClient(ch chan webEvent) {
+func (wb *WebBridge) removeSSEClient(ch chan webEvent) {
 	wb.sseMu.Lock()
 	delete(wb.sseClients, ch)
 	wb.sseMu.Unlock()
 	close(ch)
 }
 
-func (wb *webBridge) emitSSE(evt webEvent) {
+func (wb *WebBridge) emitSSE(evt webEvent) {
 	if evt.Kind != "notification" {
 		return
 	}
@@ -434,29 +445,29 @@ func (wb *webBridge) emitSSE(evt webEvent) {
 	wb.sseMu.Unlock()
 }
 
-func (wb *webBridge) ShowMessage(msg message.Message) {
+func (wb *WebBridge) ShowMessage(msg message.Message) {
 	wb.sendEvent(webEvent{Kind: "message", Message: msg})
 }
 
-func (wb *webBridge) ShowSystem(text string) {
+func (wb *WebBridge) ShowSystem(text string) {
 	wb.sendEvent(webEvent{Kind: "system", Text: text})
 }
 
-func (wb *webBridge) UpdatePeers(peers []peerPresence) {
+func (wb *WebBridge) UpdatePeers(peers []Presence) {
 	wb.sendEvent(webEvent{Kind: "peers", Users: peers})
 }
 
-func (wb *webBridge) ShowNotification(n notificationPayload) {
+func (wb *WebBridge) ShowNotification(n Notification) {
 	evt := webEvent{Kind: "notification", Notification: n}
 	wb.sendEvent(evt)
 }
 
 type webEvent struct {
-	Kind         string              `json:"kind"`
-	Message      message.Message     `json:"message,omitempty"`
-	Text         string              `json:"text,omitempty"`
-	Users        []peerPresence      `json:"users,omitempty"`
-	History      []message.Message   `json:"history,omitempty"`
-	Notification notificationPayload `json:"notification,omitempty"`
-	File         fileRecord          `json:"file,omitempty"`
+	Kind         string             `json:"kind"`
+	Message      message.Message    `json:"message,omitempty"`
+	Text         string             `json:"text,omitempty"`
+	Users        []Presence         `json:"users,omitempty"`
+	History      []message.Message  `json:"history,omitempty"`
+	Notification Notification       `json:"notification,omitempty"`
+	File         storage.FileRecord `json:"file,omitempty"`
 }

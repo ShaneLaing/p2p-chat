@@ -1,4 +1,4 @@
-package peer
+package protocol
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 )
 
 func TestMsgCacheSeenRespectsTTL(t *testing.T) {
-	cache := newMsgCache(25 * time.Millisecond)
+	cache := NewMsgCache(25 * time.Millisecond)
 	if cache.Seen("msg") {
 		t.Fatalf("first Seen call should miss cache")
 	}
@@ -20,7 +20,7 @@ func TestMsgCacheSeenRespectsTTL(t *testing.T) {
 }
 
 func TestMsgCacheIgnoresEmptyIDs(t *testing.T) {
-	cache := newMsgCache(time.Minute)
+	cache := NewMsgCache(time.Minute)
 	if cache.Seen("") {
 		t.Fatalf("empty id should never be tracked")
 	}

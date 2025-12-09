@@ -1,4 +1,4 @@
-package peer
+package storage
 
 import (
 	"encoding/json"
@@ -12,15 +12,15 @@ import (
 	"p2p-chat/internal/message"
 )
 
-// historyBucket keeps JSON-encoded message blobs keyed by
-// `<timestamp>-<msgID>` so iterating with a reverse cursor returns newest-first.
 const historyBucket = "messages"
 
-type historyStore struct {
+// HistoryStore persists chat history using BoltDB so peers can reload recent
+// conversations on restart.
+type HistoryStore struct {
 	db *bbolt.DB
 }
 
-func openHistoryStore(path string) (*historyStore, error) {
+func OpenHistoryStore(path string) (*HistoryStore, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
@@ -36,17 +36,17 @@ func openHistoryStore(path string) (*historyStore, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	return &historyStore{db: db}, nil
+	return &HistoryStore{db: db}, nil
 }
 
-func (s *historyStore) Close() error {
+func (s *HistoryStore) Close() error {
 	if s == nil || s.db == nil {
 		return nil
 	}
 	return s.db.Close()
 }
 
-func (s *historyStore) Append(msg message.Message) error {
+func (s *HistoryStore) Append(msg message.Message) error {
 	if s == nil || s.db == nil {
 		return nil
 	}
@@ -61,7 +61,7 @@ func (s *historyStore) Append(msg message.Message) error {
 	})
 }
 
-func (s *historyStore) Recent(limit int) ([]message.Message, error) {
+func (s *HistoryStore) Recent(limit int) ([]message.Message, error) {
 	if s == nil || s.db == nil {
 		return nil, nil
 	}
