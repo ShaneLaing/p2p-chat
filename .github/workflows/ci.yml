@@ -27,10 +27,10 @@ jobs:
           go vet ./...
           go test ./...
       - name: Go benchmarks (sanity)
-        run: go test ./internal/peer -bench . -benchtime=100ms
+        run: go test ./internal/protocol -bench . -benchtime=100ms
       - name: Node unit tests
         run: |
-          cd internal/peer/webui/static
+          cd internal/ui/webui/static
           if [ -f package.json ]; then
             npm install
           fi
